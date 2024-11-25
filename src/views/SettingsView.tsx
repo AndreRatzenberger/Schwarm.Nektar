@@ -3,6 +3,9 @@ import { useSettingsStore } from '../store/settingsStore';
 import { useLogStore } from '../store/logStore';
 import { useDataStore } from '../store/dataStore';
 import { usePauseStore } from '../store/pauseStore';
+import RawDataView from './RawDataView';
+import { RefreshCw } from 'lucide-react';
+
 
 const REFRESH_INTERVALS = [
   { label: 'Off', value: null },
@@ -32,11 +35,13 @@ export default function SettingsView() {
     setShowConfirmation(false);
   };
 
+  
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-medium text-gray-900">Application Settings</h2>
       <div className="bg-white shadow rounded-lg p-6 space-y-6">
         <div>
+        
           <label htmlFor="endpoint" className="block text-sm font-medium text-gray-700">
             Endpoint URL
           </label>
@@ -88,7 +93,8 @@ export default function SettingsView() {
           <p className="mt-1 text-sm text-gray-500">
             Clear all locally stored data. This will not affect the server.
           </p>
-        </div>
+        </div>        
+        <RawDataView />
       </div>
 
       {/* Confirmation Dialog */}
@@ -116,7 +122,9 @@ export default function SettingsView() {
               >
                 Delete Data
               </button>
+              
             </div>
+            
           </div>
         </div>
       )}

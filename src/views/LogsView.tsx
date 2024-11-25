@@ -1,21 +1,14 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Search, Filter, Clock, ChevronUp, ChevronDown } from 'lucide-react'
+import { Search, Clock, ChevronUp, ChevronDown } from 'lucide-react'
 import { useLogStore } from '../store/logStore'
 import type { Log } from '../types'
 import JsonView from '@uiw/react-json-view'
 import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 
 const levelColors = {
   INFO: { bg: 'bg-blue-100', text: 'text-blue-800', border: 'border-blue-200', dot: 'bg-blue-400' },
@@ -23,9 +16,9 @@ const levelColors = {
   ERROR: { bg: 'bg-red-100', text: 'text-red-800', border: 'border-red-200', dot: 'bg-red-400' },
   LOG: { bg: 'bg-gray-100', text: 'text-gray-800', border: 'border-gray-200', dot: 'bg-gray-400' },
   START_TURN: { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-200', dot: 'bg-green-400' },
-  INSTRUCTION: { bg: 'bg-purple-100', text: 'text-purple-800', border: 'border-purple-200', dot: 'bg-purple-400' },
-  MESSAGE: { bg: 'bg-indigo-100', text: 'text-indigo-800', border: 'border-indigo-200', dot: 'bg-indigo-400' },
-  POST_MESSAGE: { bg: 'bg-teal-100', text: 'text-teal-800', border: 'border-teal-200', dot: 'bg-teal-400' },
+  INSTRUCT: { bg: 'bg-purple-100', text: 'text-purple-800', border: 'border-purple-200', dot: 'bg-purple-400' },
+  MESSAGE_COMPLETION: { bg: 'bg-indigo-100', text: 'text-indigo-800', border: 'border-indigo-200', dot: 'bg-indigo-400' },
+  POST_MESSAGE_COMPLETION: { bg: 'bg-teal-100', text: 'text-teal-800', border: 'border-teal-200', dot: 'bg-teal-400' },
   TOOL_EXECUTION: { bg: 'bg-orange-100', text: 'text-orange-800', border: 'border-orange-200', dot: 'bg-orange-400' },
   POST_TOOL_EXECUTION: { bg: 'bg-pink-100', text: 'text-pink-800', border: 'border-pink-200', dot: 'bg-pink-400' },
   HANDOFF: { bg: 'bg-cyan-100', text: 'text-cyan-800', border: 'border-cyan-200', dot: 'bg-cyan-400' }
@@ -45,6 +38,7 @@ export default function LogsView() {
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [newLogIds, setNewLogIds] = useState<Set<string>>(new Set())
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null)
+  const [activeFilters, setActiveFilters] = useState<Set<LogLevel>>(new Set())
   const { logs } = useLogStore()
 
   useEffect(() => {
@@ -56,6 +50,18 @@ export default function LogsView() {
 
   const handleRowClick = (logId: string) => {
     setExpandedLogId(expandedLogId === logId ? null : logId)
+  }
+
+  const toggleFilter = (level: LogLevel) => {
+    setActiveFilters(prev => {
+      const newFilters = new Set(prev)
+      if (newFilters.has(level)) {
+        newFilters.delete(level)
+      } else {
+        newFilters.add(level)
+      }
+      return newFilters
+    })
   }
 
   const sortLogs = (a: Log, b: Log) => {
@@ -79,11 +85,16 @@ export default function LogsView() {
 
   const filteredLogs = (logs || [])
     .filter(log => {
-      if (!searchTerm) return true
-      const term = searchTerm.toLowerCase()
-      const agent = (log.agent || '').toLowerCase()
-      const message = (log.message || '').toLowerCase()
-      return agent.includes(term) || message.includes(term)
+      if (!searchTerm && activeFilters.size === 0) return true
+      
+      const matchesSearch = !searchTerm || 
+        (log.agent || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+        (log.message || '').toLowerCase().includes(searchTerm.toLowerCase())
+      
+      const matchesFilter = activeFilters.size === 0 || 
+        (isValidLogLevel(log.level) && activeFilters.has(log.level))
+      
+      return matchesSearch && matchesFilter
     })
     .sort(sortLogs)
 
@@ -116,8 +127,8 @@ export default function LogsView() {
         <CardTitle>Logs</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="flex space-x-4 mb-4">
-          <div className="flex-1 relative">
+        <div className="space-y-4 mb-4">
+          <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
             <Input
               type="text"
@@ -127,20 +138,25 @@ export default function LogsView() {
               onChange={(e: { target: { value: React.SetStateAction<string> } }) => setSearchTerm(e.target.value)}
             />
           </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline">
-                <Filter className="h-4 w-4 mr-2" />
-                Filters
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem>Level: INFO</DropdownMenuItem>
-              <DropdownMenuItem>Level: WARN</DropdownMenuItem>
-              <DropdownMenuItem>Level: ERROR</DropdownMenuItem>
-              <DropdownMenuItem>Level: DEBUG</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div className="flex flex-wrap gap-2">
+            {Object.keys(levelColors).map((level) => {
+              const isActive = activeFilters.has(level as LogLevel)
+              return (
+                <Badge
+                  key={level}
+                  variant={isActive ? "default" : "outline"}
+                  className={`cursor-pointer transition-all hover:opacity-80 ${
+                    isActive 
+                      ? `${levelColors[level as LogLevel].bg} ${levelColors[level as LogLevel].text}`
+                      : `hover:${levelColors[level as LogLevel].bg} hover:${levelColors[level as LogLevel].text}`
+                  }`}
+                  onClick={() => toggleFilter(level as LogLevel)}
+                >
+                  {level}
+                </Badge>
+              )
+            })}
+          </div>
         </div>
         <div className="rounded-md border">
           <Table>
@@ -233,4 +249,3 @@ export default function LogsView() {
     </Card>
   )
 }
-
