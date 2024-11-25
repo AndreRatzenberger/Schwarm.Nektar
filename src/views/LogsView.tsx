@@ -21,8 +21,15 @@ const levelColors = {
   INFO: { bg: 'bg-blue-100', text: 'text-blue-800', border: 'border-blue-200', dot: 'bg-blue-400' },
   WARN: { bg: 'bg-yellow-100', text: 'text-yellow-800', border: 'border-yellow-200', dot: 'bg-yellow-400' },
   ERROR: { bg: 'bg-red-100', text: 'text-red-800', border: 'border-red-200', dot: 'bg-red-400' },
-  DEBUG: { bg: 'bg-gray-100', text: 'text-gray-800', border: 'border-gray-200', dot: 'bg-gray-400' }
-} as const
+  LOG: { bg: 'bg-gray-100', text: 'text-gray-800', border: 'border-gray-200', dot: 'bg-gray-400' },
+  START_TURN: { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-200', dot: 'bg-green-400' },
+  INSTRUCTION: { bg: 'bg-purple-100', text: 'text-purple-800', border: 'border-purple-200', dot: 'bg-purple-400' },
+  MESSAGE: { bg: 'bg-indigo-100', text: 'text-indigo-800', border: 'border-indigo-200', dot: 'bg-indigo-400' },
+  POST_MESSAGE: { bg: 'bg-teal-100', text: 'text-teal-800', border: 'border-teal-200', dot: 'bg-teal-400' },
+  TOOL_EXECUTION: { bg: 'bg-orange-100', text: 'text-orange-800', border: 'border-orange-200', dot: 'bg-orange-400' },
+  POST_TOOL_EXECUTION: { bg: 'bg-pink-100', text: 'text-pink-800', border: 'border-pink-200', dot: 'bg-pink-400' },
+  HANDOFF: { bg: 'bg-cyan-100', text: 'text-cyan-800', border: 'border-cyan-200', dot: 'bg-cyan-400' }
+} as const;
 
 type LogLevel = keyof typeof levelColors
 type SortField = 'timestamp' | 'level' | 'agent' | 'message'
@@ -142,12 +149,13 @@ export default function LogsView() {
                 <TableHead onClick={() => handleSort('timestamp')} className="cursor-pointer">
                   Timestamp {renderSortIndicator('timestamp')}
                 </TableHead>
-                <TableHead onClick={() => handleSort('level')} className="cursor-pointer">
-                  Level {renderSortIndicator('level')}
-                </TableHead>
                 <TableHead onClick={() => handleSort('agent')} className="cursor-pointer">
                   Agent {renderSortIndicator('agent')}
                 </TableHead>
+                <TableHead onClick={() => handleSort('level')} className="cursor-pointer">
+                  Event Type {renderSortIndicator('level')}
+                </TableHead>
+                
                 <TableHead onClick={() => handleSort('message')} className="cursor-pointer">
                   Message {renderSortIndicator('message')}
                 </TableHead>
@@ -171,12 +179,13 @@ export default function LogsView() {
                           ${expandedLogId === log.id ? 'rotate-180' : ''}`} />
                       </div>
                     </TableCell>
+                    <TableCell className="font-medium">{log.agent}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className={`${getLogColors(log.level).bg} ${getLogColors(log.level).text}`}>
                         {log.level}
                       </Badge>
                     </TableCell>
-                    <TableCell className="font-medium">{log.agent}</TableCell>
+                    
                     <TableCell>{log.message}</TableCell>
                   </TableRow>
                   {expandedLogId === log.id && (
@@ -190,7 +199,7 @@ export default function LogsView() {
                                 <p className="mt-1 text-sm">{new Date(log.timestamp).toLocaleString()}</p>
                               </div>
                               <div>
-                                <h4 className="text-sm font-medium text-gray-500">Level</h4>
+                                <h4 className="text-sm font-medium text-gray-500">Event Type</h4>
                                 <Badge variant="outline" className={`mt-1 ${getLogColors(log.level).bg} ${getLogColors(log.level).text}`}>
                                   {log.level}
                                 </Badge>
