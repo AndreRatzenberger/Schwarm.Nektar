@@ -1,5 +1,3 @@
-'use client'
-
 import React, { useState, useEffect } from 'react'
 import { Search, Filter, Clock, ChevronUp, ChevronDown } from 'lucide-react'
 import { useLogStore } from '../store/logStore'
@@ -117,7 +115,7 @@ export default function LogsView() {
               className="pl-10"
               placeholder="Search logs..."
               value={searchTerm}
-              onChange={(e: { target: { value: React.SetStateAction<string> } }) => setSearchTerm(e.target.value)}
+              onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
           <DropdownMenu>
@@ -164,10 +162,10 @@ export default function LogsView() {
                     <TableCell>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center">
-                          <Clock className="h-4 w-8 mr-2 text-gray-400" />
+                          <Clock className="h-4 w-4 mr-2 text-gray-400" />
                           {new Date(log.timestamp).toLocaleString()}
                         </div>
-                        <ChevronDown className={`h-4 w-8 text-gray-400 transition-transform duration-200 
+                        <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform duration-200 
                           ${expandedLogId === log.id ? 'rotate-180' : ''}`} />
                       </div>
                     </TableCell>

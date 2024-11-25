@@ -8,12 +8,13 @@ import RawDataView from './views/RawDataView';
 import SettingsView from './views/SettingsView';
 import PlayPauseButton from './components/PlayPauseButton';
 import RefreshButton from './components/RefreshButton';
+import MessageFlow from './components/message-flow';
 import { useDataStore } from './store/dataStore';
 import { useLogStore } from './store/logStore';
 import { useSettingsStore } from './store/settingsStore';
 import type { Span, Log } from './types';
 
-type View = 'dashboard' | 'logs' | 'network' | 'metrics' | 'rawdata' | 'settings';
+type View = 'dashboard' | 'messageflow' | 'logs' | 'network' | 'metrics' | 'rawdata' | 'settings';
 
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY = 1000;
@@ -113,6 +114,7 @@ function App() {
     network: <NetworkView />,
     metrics: <MetricsView />,
     rawdata: <RawDataView />,
+    messageflow: <MessageFlow />,
     settings: <SettingsView />
   };
 
@@ -122,6 +124,7 @@ function App() {
     { id: 'network', label: 'Network', icon: Network },
     { id: 'metrics', label: 'Metrics', icon: BarChart },
     { id: 'rawdata', label: 'Raw Data', icon: Database },
+    { id: 'messageflow', label: 'Message Flow', icon: ScrollText},
     { id: 'settings', label: 'Settings', icon: Settings }
   ];
 
