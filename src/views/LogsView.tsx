@@ -1,34 +1,40 @@
 import React, { useState } from 'react';
 import { Search, Filter, Clock } from 'lucide-react';
-
-interface Log {
-  id: string;
-  timestamp: string;
-  level: 'INFO' | 'WARN' | 'ERROR' | 'DEBUG';
-  agent: string;
-  message: string;
-  details?: Record<string, unknown>;
-}
-
-const sampleLogs: Log[] = Array.from({ length: 50 }, (_, i) => ({
-  id: `log-${i}`,
-  timestamp: new Date(Date.now() - i * 60000).toISOString(),
-  level: ['INFO', 'WARN', 'ERROR', 'DEBUG'][Math.floor(Math.random() * 4)] as Log['level'],
-  agent: `Agent-${Math.floor(Math.random() * 10) + 1}`,
-  message: `Sample log message ${i + 1}`,
-  details: { requestId: `req-${i}`, duration: `${Math.random() * 1000}ms` }
-}));
+import { useLogStore } from '../store/logStore';
+import type { Log } from '../types';
 
 const levelColors = {
   INFO: 'bg-blue-100 text-blue-800',
   WARN: 'bg-yellow-100 text-yellow-800',
   ERROR: 'bg-red-100 text-red-800',
   DEBUG: 'bg-gray-100 text-gray-800'
-};
+} as const;
+
+type LogLevel = keyof typeof levelColors;
+
+// Type guard to ensure log level is valid
+function isValidLogLevel(level: string): level is LogLevel {
+  return Object.keys(levelColors).includes(level);
+}
 
 function LogsView() {
   const [selectedLog, setSelectedLog] = useState<Log | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const logs = useLogStore((state) => state.logs);
+
+  // Filter logs based on search term
+  const filteredLogs = logs.filter(log => 
+    log.agent.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    log.message.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // Helper function to get color class safely
+  const getColorClass = (level: string) => {
+    if (isValidLogLevel(level)) {
+      return levelColors[level];
+    }
+    return levelColors.INFO; // fallback to INFO if invalid level
+  };
 
   return (
     <div className="bg-white rounded-lg shadow-sm">
@@ -77,7 +83,7 @@ function LogsView() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {sampleLogs.map((log) => (
+              {filteredLogs.map((log) => (
                 <tr
                   key={log.id}
                   onClick={() => setSelectedLog(log)}
@@ -90,7 +96,7 @@ function LogsView() {
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${levelColors[log.level]}`}>
+                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getColorClass(log.level)}`}>
                       {log.level}
                     </span>
                   </td>
@@ -121,7 +127,7 @@ function LogsView() {
                 <div>
                   <dt className="text-sm font-medium text-gray-500">Level</dt>
                   <dd className="mt-1">
-                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${levelColors[selectedLog.level]}`}>
+                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getColorClass(selectedLog.level)}`}>
                       {selectedLog.level}
                     </span>
                   </dd>
@@ -137,7 +143,7 @@ function LogsView() {
                 <div>
                   <dt className="text-sm font-medium text-gray-500">Details</dt>
                   <dd className="mt-1 text-sm text-gray-900">
-                    <pre className="bg-gray-50 p-2 rounded-md">
+                    <pre className="bg-gray-50 p-2 rounded-md overflow-auto max-h-96">
                       {JSON.stringify(selectedLog.details, null, 2)}
                     </pre>
                   </dd>
