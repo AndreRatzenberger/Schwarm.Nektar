@@ -105,65 +105,7 @@ function App() {
     return () => clearInterval(intervalId);
   }, [fetchWithRetry, refreshInterval]);
 
-  // useEffect(() => {
-  //   const fetchWithRetry = async (retryCount = 0, delay = INITIAL_RETRY_DELAY) => {
-  //     try {
-  //       const url = new URL(`${endpointUrl}/spans`);
-  //       if (latestId) {
-  //         url.searchParams.append('after_id', latestId);
-  //       }
-
-  //       const response = await fetch(url, {
-  //         method: 'GET',
-  //         mode: 'cors',
-  //         headers: {
-  //           'Accept': 'application/json',
-  //         },
-  //         credentials: 'omit'
-  //       });
-  //       console.log('response', response);
-
-  //       if (!response.ok) {
-  //         throw new Error(`HTTP error! status: ${response.status}`);
-  //       }
-
-  //       const jsonData = await response.json();
-  //       setData(jsonData);
-  //       // Transform and store logs
-  //       const logs = transformSpansToLogs(jsonData);
-  //       appendLogs(logs);
-  //       setError(null);
-  //     } catch (err) {
-  //       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch data';
-        
-  //       if (errorMessage.includes('CORS') || errorMessage.includes('Failed to fetch')) {
-  //         setError(
-  //           'CORS error: Unable to access the endpoint. Please ensure:\n' +
-  //           '1. The endpoint is running and accessible\n' +
-  //           '2. CORS is properly configured on the server\n' +
-  //           '3. The endpoint URL is correct'
-  //         );
-  //       } else if (retryCount < MAX_RETRIES) {
-  //         setTimeout(() => {
-  //           fetchWithRetry(retryCount + 1, delay * 2);
-  //         }, delay);
-  //         return;
-  //       } else {
-  //         setError(`${errorMessage}\nMax retries reached. Please check the endpoint configuration.`);
-  //       }
-  //     }
-  //   };
-
-  //   // Initial fetch
-  //   fetchWithRetry();
-
-  //   // Set up interval for periodic fetching
-  //   const intervalId = setInterval(() => fetchWithRetry(), refreshInterval);
-
-  //   // Cleanup interval on unmount or when interval/endpoint changes
-  //   return () => clearInterval(intervalId);
-  // }, [endpointUrl, refreshInterval, latestId, setData, setError, appendLogs]);
-
+  
   const views = {
     dashboard: <DashboardView />,
     logs: <LogsView />,
@@ -190,7 +132,7 @@ function App() {
             <div className="flex">
               <div className="flex-shrink-0 flex items-center">
                 <Network className="h-8 w-8 text-indigo-600" />
-                <span className="ml-2 text-xl font-bold text-gray-900">Agent Framework</span>
+                <span className="ml-2 text-xl font-bold text-gray-900">Schwarm</span>
               </div>
               <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
                 {navItems.map(({ id, label, icon: Icon }) => (

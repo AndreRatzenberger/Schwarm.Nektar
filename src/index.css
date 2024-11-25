@@ -2,11 +2,22 @@
 @tailwind components;
 @tailwind utilities;
 
+
+
 @keyframes highlight {
   0% { background-color: rgba(59, 130, 246, 0.1); }
   100% { background-color: transparent; }
 }
 
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .animate-highlight {
   animation: highlight 2s ease-out;
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.2s ease-out forwards;
 }
