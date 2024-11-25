@@ -1,15 +1,18 @@
 import React, { useEffect } from 'react';
-import { LayoutDashboard, ScrollText, Network, BarChart, Database } from 'lucide-react';
+import { LayoutDashboard, ScrollText, Network, BarChart, Database, Settings } from 'lucide-react';
 import DashboardView from './views/DashboardView';
 import LogsView from './views/LogsView';
 import NetworkView from './views/NetworkView';
 import MetricsView from './views/MetricsView';
 import RawDataView from './views/RawDataView';
+import SettingsView from './views/SettingsView';
+import PlayPauseButton from './components/PlayPauseButton';
 import { useDataStore } from './store/dataStore';
 import { useLogStore } from './store/logStore';
+import { useSettingsStore } from './store/settingsStore';
 import type { Span } from './types';
 
-type View = 'dashboard' | 'logs' | 'network' | 'metrics' | 'rawdata';
+type View = 'dashboard' | 'logs' | 'network' | 'metrics' | 'rawdata' | 'settings';
 
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY = 1000;
@@ -21,7 +24,7 @@ function transformSpansToLogs(spans: Span[]) {
     const timestamp = new Date(Number(span.start_time) / 1_000_000).toISOString();
     
     return {
-      id: crypto.randomUUID(),
+      id: span.id,
       timestamp,
       level: isStart ? 'INFO' : 'DEBUG',
       agent: isStart ? 'System' : span.name,
@@ -33,13 +36,19 @@ function transformSpansToLogs(spans: Span[]) {
 
 function App() {
   const [currentView, setCurrentView] = React.useState<View>('dashboard');
-  const { endpoint, refreshInterval, setData, setError } = useDataStore();
-  const { setLogs } = useLogStore();
+  const { setData, setError } = useDataStore();
+  const { latestId, appendLogs } = useLogStore();
+  const { endpointUrl, refreshInterval } = useSettingsStore();
 
   useEffect(() => {
     const fetchWithRetry = async (retryCount = 0, delay = INITIAL_RETRY_DELAY) => {
       try {
-        const response = await fetch(endpoint, {
+        const url = new URL(`${endpointUrl}/spans`);
+        if (latestId) {
+          url.searchParams.append('after_id', latestId);
+        }
+
+        const response = await fetch(url, {
           method: 'GET',
           mode: 'cors',
           headers: {
@@ -47,6 +56,7 @@ function App() {
           },
           credentials: 'omit'
         });
+        console.log('response', response);
 
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
@@ -56,7 +66,7 @@ function App() {
         setData(jsonData);
         // Transform and store logs
         const logs = transformSpansToLogs(jsonData);
-        setLogs(logs);
+        appendLogs(logs);
         setError(null);
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Failed to fetch data';
@@ -87,14 +97,15 @@ function App() {
 
     // Cleanup interval on unmount or when interval/endpoint changes
     return () => clearInterval(intervalId);
-  }, [endpoint, refreshInterval, setData, setError, setLogs]);
+  }, [endpointUrl, refreshInterval, latestId, setData, setError, appendLogs]);
 
   const views = {
     dashboard: <DashboardView />,
     logs: <LogsView />,
     network: <NetworkView />,
     metrics: <MetricsView />,
-    rawdata: <RawDataView />
+    rawdata: <RawDataView />,
+    settings: <SettingsView />
   };
 
   const navItems = [
@@ -102,7 +113,8 @@ function App() {
     { id: 'logs', label: 'Logs', icon: ScrollText },
     { id: 'network', label: 'Network', icon: Network },
     { id: 'metrics', label: 'Metrics', icon: BarChart },
-    { id: 'rawdata', label: 'Raw Data', icon: Database }
+    { id: 'rawdata', label: 'Raw Data', icon: Database },
+    { id: 'settings', label: 'Settings', icon: Settings }
   ];
 
   return (
@@ -131,6 +143,9 @@ function App() {
                   </button>
                 ))}
               </div>
+            </div>
+            <div className="flex items-center">
+              <PlayPauseButton />
             </div>
           </div>
         </nav>

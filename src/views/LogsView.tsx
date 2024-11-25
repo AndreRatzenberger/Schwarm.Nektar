@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Search, Filter, Clock } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Search, Filter, Clock, ChevronUp, ChevronDown } from 'lucide-react';
 import { useLogStore } from '../store/logStore';
 import type { Log } from '../types';
 
@@ -11,6 +11,8 @@ const levelColors = {
 } as const;
 
 type LogLevel = keyof typeof levelColors;
+type SortField = 'timestamp' | 'level' | 'agent' | 'message';
+type SortDirection = 'asc' | 'desc';
 
 // Type guard to ensure log level is valid
 function isValidLogLevel(level: string): level is LogLevel {
@@ -20,13 +22,58 @@ function isValidLogLevel(level: string): level is LogLevel {
 function LogsView() {
   const [selectedLog, setSelectedLog] = useState<Log | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortField, setSortField] = useState<SortField>('timestamp');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [newLogIds, setNewLogIds] = useState<Set<string>>(new Set());
   const logs = useLogStore((state) => state.logs);
+  const latestId = useLogStore((state) => state.latestId);
+
+  // Track new logs
+  useEffect(() => {
+    if (!latestId) return;
+
+    const latestIndex = logs.findIndex(log => log.id === latestId);
+    if (latestIndex === -1) return;
+
+    // Get IDs of all logs after the latest known ID
+    const newIds = new Set(logs.slice(latestIndex + 1).map(log => log.id));
+
+    if (newIds.size > 0) {
+      setNewLogIds(newIds);
+      // Clear highlight after 2 seconds
+      setTimeout(() => {
+        setNewLogIds(new Set());
+      }, 2000);
+    }
+  }, [logs, latestId]);
+
+  // Sort logs
+  const sortLogs = (a: Log, b: Log) => {
+    let comparison = 0;
+    switch (sortField) {
+      case 'timestamp':
+        comparison = new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+        break;
+      case 'level':
+        comparison = a.level.localeCompare(b.level);
+        break;
+      case 'agent':
+        comparison = a.agent.localeCompare(b.agent);
+        break;
+      case 'message':
+        comparison = a.message.localeCompare(b.message);
+        break;
+    }
+    return sortDirection === 'asc' ? comparison : -comparison;
+  };
 
   // Filter logs based on search term
-  const filteredLogs = logs.filter(log => 
-    log.agent.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    log.message.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredLogs = logs
+    .filter(log => 
+      log.agent.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      log.message.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+    .sort(sortLogs);
 
   // Helper function to get color class safely
   const getColorClass = (level: string) => {
@@ -34,6 +81,24 @@ function LogsView() {
       return levelColors[level];
     }
     return levelColors.INFO; // fallback to INFO if invalid level
+  };
+
+  // Handle column header click
+  const handleSort = (field: SortField) => {
+    if (field === sortField) {
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  // Render sort indicator
+  const renderSortIndicator = (field: SortField) => {
+    if (sortField !== field) return null;
+    return sortDirection === 'asc' ? 
+      <ChevronUp className="h-4 w-4 inline-block ml-1" /> :
+      <ChevronDown className="h-4 w-4 inline-block ml-1" />;
   };
 
   return (
@@ -68,17 +133,41 @@ function LogsView() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Timestamp
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('timestamp')}
+                >
+                  <span className="inline-flex items-center">
+                    Timestamp
+                    {renderSortIndicator('timestamp')}
+                  </span>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Level
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('level')}
+                >
+                  <span className="inline-flex items-center">
+                    Level
+                    {renderSortIndicator('level')}
+                  </span>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Agent
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('agent')}
+                >
+                  <span className="inline-flex items-center">
+                    Agent
+                    {renderSortIndicator('agent')}
+                  </span>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Message
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('message')}
+                >
+                  <span className="inline-flex items-center">
+                    Message
+                    {renderSortIndicator('message')}
+                  </span>
                 </th>
               </tr>
             </thead>
@@ -87,7 +176,9 @@ function LogsView() {
                 <tr
                   key={log.id}
                   onClick={() => setSelectedLog(log)}
-                  className="hover:bg-gray-50 cursor-pointer"
+                  className={`hover:bg-gray-50 cursor-pointer transition-colors duration-200 ${
+                    newLogIds.has(log.id) ? 'animate-highlight' : ''
+                  }`}
                 >
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     <div className="flex items-center">
