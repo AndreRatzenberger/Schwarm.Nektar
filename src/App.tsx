@@ -21,12 +21,13 @@ const INITIAL_RETRY_DELAY = 1000;
 function transformSpansToLogs(spans: Span[]): Log[] {
   return spans.map((span) => {
     const isStart = span.name === 'SCHWARM_START';
+    const isError = span.status_code == 'ERROR';
     const timestamp = new Date(Number(span.start_time) / 1_000_000).toISOString();
     
     return {
       id: span.id,
       timestamp,
-      level: isStart ? 'INFO' : 'DEBUG',
+      level: isError ? 'ERROR' : (isStart ? 'INFO' : 'DEBUG'),
       agent: isStart ? 'System' : span.name,
       message: isStart ? 'Agent Framework Started' : `Agent ${span.name} activity`,
       details: span

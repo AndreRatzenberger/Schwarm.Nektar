@@ -6,10 +6,12 @@ import { usePauseStore } from '../store/pauseStore';
 
 const REFRESH_INTERVALS = [
   { label: 'Off', value: null },
+  { label: '1 seconds', value: 1000 },
   { label: '5 seconds', value: 5000 },
   { label: '10 seconds', value: 10000 },
   { label: '30 seconds', value: 30000 },
   { label: '1 minute', value: 60000 },
+  { label: '5 minute', value: 300000 },
   { label: '10 minute', value: 600000 }
 ];
 
