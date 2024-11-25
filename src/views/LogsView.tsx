@@ -19,7 +19,8 @@ function isValidLogLevel(level: string): level is LogLevel {
 }
 
 function LogsView() {
-  const [selectedLog, setSelectedLog] = useState<Log | null>(null);
+  // const [selectedLog, setSelectedLog] = useState<Log | null>(null);
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortField, setSortField] = useState<SortField>('timestamp');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
@@ -70,6 +71,10 @@ function LogsView() {
       return levelColors[level];
     }
     return levelColors.INFO;
+  };
+
+  const handleRowClick = (logId: string) => {
+    setExpandedLogId(expandedLogId === logId ? null : logId);
   };
 
   const handleSort = (field: SortField) => {
@@ -126,8 +131,8 @@ function LogsView() {
       </div>
 
       {/* Logs Table */}
-      <div className="flex flex-col md:flex-row">
-        <div className="w-full md:w-2/3 overflow-x-auto">
+    <div className="overflow-x-auto">
+      
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
@@ -170,10 +175,10 @@ function LogsView() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredLogs.map((log) => (
+            {filteredLogs.map((log) => (
+              <React.Fragment key={log.id}>
                 <tr
-                  key={log.id}
-                  onClick={() => setSelectedLog(log)}
+                  onClick={() => handleRowClick(log.id)}
                   className={`hover:bg-gray-50 cursor-pointer transition-colors duration-200 ${
                     newLogIds.has(log.id) ? 'animate-highlight' : ''
                   }`}
@@ -196,58 +201,54 @@ function LogsView() {
                     {log.message}
                   </td>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Details Panel */}
-        <div className="w-full md:w-1/3 border-t md:border-t-0 md:border-l border-gray-200">
-          {selectedLog ? (
-            <div className="p-6">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Log Details</h3>
-              <dl className="space-y-4">
-                <div>
-                  <dt className="text-sm font-medium text-gray-500">Timestamp</dt>
-                  <dd className="mt-1 text-sm text-gray-900">
-                    {new Date(selectedLog.timestamp).toLocaleString()}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-sm font-medium text-gray-500">Level</dt>
-                  <dd className="mt-1">
-                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getColorClass(selectedLog.level)}`}>
-                      {selectedLog.level}
-                    </span>
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-sm font-medium text-gray-500">Agent</dt>
-                  <dd className="mt-1 text-sm text-gray-900">{selectedLog.agent}</dd>
-                </div>
-                <div>
-                  <dt className="text-sm font-medium text-gray-500">Message</dt>
-                  <dd className="mt-1 text-sm text-gray-900">{selectedLog.message}</dd>
-                </div>
-                <div>
-                  <dt className="text-sm font-medium text-gray-500">Details</dt>
-                  <dd className="mt-1 text-sm text-gray-900">
-                    <pre className="bg-gray-50 p-2 rounded-md overflow-auto max-h-96">
-                      {JSON.stringify(selectedLog.details, null, 2)}
-                    </pre>
-                  </dd>
-                </div>
-              </dl>
-            </div>
-          ) : (
-            <div className="p-6 text-center text-gray-500">
-              Select a log entry to view details
-            </div>
-          )}
-        </div>
+                {expandedLogId === log.id && (
+                  <tr>
+                    <td colSpan={4} className="px-6 py-4 bg-gray-50">
+                      <div className="space-y-4">
+                        <dl className="grid grid-cols-2 gap-4">
+                          <div>
+                            <dt className="text-sm font-medium text-gray-500">Timestamp</dt>
+                            <dd className="mt-1 text-sm text-gray-900">
+                              {new Date(log.timestamp).toLocaleString()}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-sm font-medium text-gray-500">Level</dt>
+                            <dd className="mt-1">
+                              <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getColorClass(log.level)}`}>
+                                {log.level}
+                              </span>
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-sm font-medium text-gray-500">Agent</dt>
+                            <dd className="mt-1 text-sm text-gray-900">{log.agent}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-sm font-medium text-gray-500">Message</dt>
+                            <dd className="mt-1 text-sm text-gray-900">{log.message}</dd>
+                          </div>
+                        </dl>
+                        <div>
+                          <dt className="text-sm font-medium text-gray-500">Details</dt>
+                          <dd className="mt-1 text-sm text-gray-900">
+                            <pre className="bg-gray-50 p-2 rounded-md overflow-auto max-h-96">
+                              {JSON.stringify(log.details, null, 2)}
+                            </pre>
+                          </dd>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
 }
+
 
 export default LogsView;
