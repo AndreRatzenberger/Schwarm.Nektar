@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
+import { ScrollArea } from './ui/scroll-area'
 import { MessageSquare, GitBranch } from 'lucide-react'
 import { AgentDetailsPanel } from './agent-details-panel'
 
@@ -21,8 +21,13 @@ export interface Span {
   name: string;
   start_time: string;
   status_code: string;
+  agent: string;
   [key: string]: unknown;
 }
+
+type LogItem = Log & { type: 'log' };
+type SpanItem = Span & { type: 'span' };
+type Item = LogItem | SpanItem;
 
 // Mock data - replace with your actual data fetching logic
 const mockLogs: Log[] = [
@@ -39,28 +44,31 @@ const mockSpans: Span[] = [
   { id: 'span3', parent_id: 'span1', name: 'Data Validation', start_time: '2023-06-10T10:00:10Z', status_code: 'WARNING', agent: 'Agent2' },
 ]
 
-type Item = (Log | Span) & { type: 'log' | 'span' };
-
 export default function MessageFlow() {
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null)
   const [items, setItems] = useState<Item[]>([])
   const [selectedItem, setSelectedItem] = useState<Item | null>(null)
-  const [isDetailsPanelOpen, setIsDetailsPanelOpen] = useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const combinedItems: Item[] = [
       ...mockLogs.map(log => ({ ...log, type: 'log' as const })),
       ...mockSpans.map(span => ({ ...span, type: 'span' as const })),
-    ].sort((a, b) => new Date(a.timestamp || a.start_time).getTime() - new Date(b.timestamp || b.start_time).getTime())
+    ].sort((a, b) => {
+      const aTime = a.type === 'log' ? a.timestamp : a.start_time
+      const bTime = b.type === 'log' ? b.timestamp : b.start_time
+      return new Date(aTime).getTime() - new Date(bTime).getTime()
+    })
 
     if (selectedAgent && selectedAgent !== 'all') {
-      setItems(combinedItems.filter(item => 
-        (item.type === 'log' && item.agent === selectedAgent) ||
-        (item.type === 'span' && item.agent === selectedAgent)
-      ))
+      setItems(combinedItems.filter(item => item.agent === selectedAgent))
     } else {
       setItems(combinedItems)
+    }
+
+    // Auto-select the newest item if none is selected
+    if (!selectedItem) {
+      setSelectedItem(combinedItems[combinedItems.length - 1])
     }
   }, [selectedAgent])
 
@@ -92,16 +100,23 @@ export default function MessageFlow() {
 
   const handleItemClick = (item: Item) => {
     setSelectedItem(item)
-    setIsDetailsPanelOpen(true)
+  }
+
+  const getItemTime = (item: Item): string => {
+    return item.type === 'log' ? item.timestamp : item.start_time
+  }
+
+  const getItemContent = (item: Item): string => {
+    return item.type === 'log' ? item.message : `${item.name} - Status: ${item.status_code}`
   }
 
   const renderItem = (item: Item) => (
-    <div key={item.id} className={`flex flex-col ${item.type === 'log' ? (item.agent === 'Agent1' ? 'items-end' : 'items-start') : 'items-center'}`}>
+    <div key={item.id} className={`flex flex-col ${item.agent === 'Agent1' ? 'items-end' : 'items-start'}`}>
       <div 
-        className={`max-w-[70%] rounded-lg p-3 ${getItemStyle(item)} cursor-pointer hover:opacity-80 transition-opacity`}
+        className={`max-w-[70%] rounded-lg p-3 ${getItemStyle(item)} ml-2 mr-2 cursor-pointer hover:opacity-80 transition-opacity ${selectedItem?.id === item.id ? 'ring-2 ring-blue-500' : ''}`}
         onClick={() => handleItemClick(item)}
       >
-        <div className="flex items-center space-x-2 mb-1">
+        <div className="flex items-center space-x-2 mb-1 pl-10">
           {item.type === 'log' ? (
             <MessageSquare className="h-4 w-4" />
           ) : (
@@ -112,14 +127,22 @@ export default function MessageFlow() {
           </span>
         </div>
         <p className="text-sm">
-          {item.type === 'log' ? item.message : `${item.name} - Status: ${item.status_code}`}
+          {getItemContent(item)}
         </p>
         <p className="text-xs text-muted-foreground mt-1">
-          {new Date(item.type === 'log' ? item.timestamp : item.start_time).toLocaleString()}
+          {new Date(getItemTime(item)).toLocaleString()}
         </p>
       </div>
     </div>
   )
+
+  const getItemDetails = (item: Item): Record<string, unknown> => {
+    if (item.type === 'log') {
+      return item.details || {}
+    }
+    const { type: _, ...details } = item
+    return details
+  }
 
   return (
     <Card className="w-full">
@@ -139,21 +162,20 @@ export default function MessageFlow() {
         </Select>
       </CardHeader>
       <CardContent>
-        <ScrollArea className="h-[400px] w-full rounded-md border p-4" ref={scrollAreaRef}>
-          <div className="space-y-4">
-            {items.map(renderItem)}
+        <div className="flex">
+          <AgentDetailsPanel
+            agent={selectedItem?.agent || 'No Selection'}
+            details={selectedItem ? getItemDetails(selectedItem) : {}}
+          />
+          <div className="flex-1 ml-4">
+            <ScrollArea className="h-[400px] w-full rounded-md border p-4" ref={scrollAreaRef}>
+              <div className="space-y-4">
+                {items.map(renderItem)}
+              </div>
+            </ScrollArea>
           </div>
-        </ScrollArea>
+        </div>
       </CardContent>
-      {selectedItem && (
-        <AgentDetailsPanel
-          agent={selectedItem.agent}
-          details={selectedItem.type === 'log' ? selectedItem.details || {} : selectedItem}
-          open={isDetailsPanelOpen}
-          onClose={() => setIsDetailsPanelOpen(false)}
-        />
-      )}
     </Card>
   )
 }
-
