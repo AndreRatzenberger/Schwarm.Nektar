@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect,useCallback  } from 'react';
 import { LayoutDashboard, ScrollText, Network, BarChart, Database, Settings } from 'lucide-react';
 import DashboardView from './views/DashboardView';
 import LogsView from './views/LogsView';
@@ -7,20 +7,20 @@ import MetricsView from './views/MetricsView';
 import RawDataView from './views/RawDataView';
 import SettingsView from './views/SettingsView';
 import PlayPauseButton from './components/PlayPauseButton';
+import RefreshButton from './components/RefreshButton';
 import { useDataStore } from './store/dataStore';
 import { useLogStore } from './store/logStore';
 import { useSettingsStore } from './store/settingsStore';
-import type { Span } from './types';
+import type { Span, Log } from './types';
 
 type View = 'dashboard' | 'logs' | 'network' | 'metrics' | 'rawdata' | 'settings';
 
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY = 1000;
 
-function transformSpansToLogs(spans: Span[]) {
+function transformSpansToLogs(spans: Span[]): Log[] {
   return spans.map((span) => {
     const isStart = span.name === 'SCHWARM_START';
-    // Convert nanoseconds to milliseconds by dividing by 1,000,000
     const timestamp = new Date(Number(span.start_time) / 1_000_000).toISOString();
     
     return {
@@ -37,67 +37,132 @@ function transformSpansToLogs(spans: Span[]) {
 function App() {
   const [currentView, setCurrentView] = React.useState<View>('dashboard');
   const { setData, setError } = useDataStore();
-  const { latestId, appendLogs } = useLogStore();
+  const {  appendLogs, setLogs } = useLogStore();
   const { endpointUrl, refreshInterval } = useSettingsStore();
 
-  useEffect(() => {
-    const fetchWithRetry = async (retryCount = 0, delay = INITIAL_RETRY_DELAY) => {
-      try {
-        const url = new URL(`${endpointUrl}/spans`);
-        if (latestId) {
-          url.searchParams.append('after_id', latestId);
-        }
+  const fetchWithRetry = useCallback(async (retryCount = 0, delay = INITIAL_RETRY_DELAY) => {
+    try {
+      const url = new URL(`${endpointUrl}/spans`);
+      const { latestId: currentLatestId } = useLogStore.getState();
 
-        const response = await fetch(url, {
-          method: 'GET',
-          mode: 'cors',
-          headers: {
-            'Accept': 'application/json',
-          },
-          credentials: 'omit'
-        });
-        console.log('response', response);
+      if (currentLatestId) {
+        url.searchParams.append('after_id', currentLatestId);
+      }
+      console.log(currentLatestId)
+      const response = await fetch(url, {
+        method: 'GET',
+        mode: 'cors',
+        headers: {
+          'Accept': 'application/json',
+        },
+        credentials: 'omit'
+      });
 
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const jsonData = await response.json();
-        setData(jsonData);
-        // Transform and store logs
-        const logs = transformSpansToLogs(jsonData);
-        appendLogs(logs);
-        setError(null);
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : 'Failed to fetch data';
-        
-        if (errorMessage.includes('CORS') || errorMessage.includes('Failed to fetch')) {
-          setError(
-            'CORS error: Unable to access the endpoint. Please ensure:\n' +
-            '1. The endpoint is running and accessible\n' +
-            '2. CORS is properly configured on the server\n' +
-            '3. The endpoint URL is correct'
-          );
-        } else if (retryCount < MAX_RETRIES) {
-          setTimeout(() => {
-            fetchWithRetry(retryCount + 1, delay * 2);
-          }, delay);
-          return;
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const jsonData = await response.json();
+      const transformedLogs = transformSpansToLogs(jsonData);
+      
+      if (transformedLogs.length > 0) {
+        if (currentLatestId) {
+          appendLogs(transformedLogs);
         } else {
-          setError(`${errorMessage}\nMax retries reached. Please check the endpoint configuration.`);
+          setLogs(transformedLogs);
         }
       }
-    };
+      setData(jsonData);
+      setError(null);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch data';
+      
+      if (errorMessage.includes('CORS') || errorMessage.includes('Failed to fetch')) {
+        setError(
+          'CORS error: Unable to access the endpoint. Please ensure:\n' +
+          '1. The endpoint is running and accessible\n' +
+          '2. CORS is properly configured on the server\n' +
+          '3. The endpoint URL is correct'
+        );
+      } else if (retryCount < MAX_RETRIES) {
+        setTimeout(() => {
+          fetchWithRetry(retryCount + 1, delay * 2);
+        }, delay);
+        return;
+      } else {
+        setError(`${errorMessage}\nMax retries reached. Please check the endpoint configuration.`);
+      }
+    }
+  }, [endpointUrl, setData, setError, appendLogs, setLogs]);
 
-    // Initial fetch
+
+  useEffect(() => {
     fetchWithRetry();
 
-    // Set up interval for periodic fetching
-    const intervalId = setInterval(() => fetchWithRetry(), refreshInterval);
+    if (!refreshInterval) return;
 
-    // Cleanup interval on unmount or when interval/endpoint changes
+    const intervalId = setInterval(() => fetchWithRetry(), refreshInterval);
     return () => clearInterval(intervalId);
-  }, [endpointUrl, refreshInterval, latestId, setData, setError, appendLogs]);
+  }, [fetchWithRetry, refreshInterval]);
+
+  // useEffect(() => {
+  //   const fetchWithRetry = async (retryCount = 0, delay = INITIAL_RETRY_DELAY) => {
+  //     try {
+  //       const url = new URL(`${endpointUrl}/spans`);
+  //       if (latestId) {
+  //         url.searchParams.append('after_id', latestId);
+  //       }
+
+  //       const response = await fetch(url, {
+  //         method: 'GET',
+  //         mode: 'cors',
+  //         headers: {
+  //           'Accept': 'application/json',
+  //         },
+  //         credentials: 'omit'
+  //       });
+  //       console.log('response', response);
+
+  //       if (!response.ok) {
+  //         throw new Error(`HTTP error! status: ${response.status}`);
+  //       }
+
+  //       const jsonData = await response.json();
+  //       setData(jsonData);
+  //       // Transform and store logs
+  //       const logs = transformSpansToLogs(jsonData);
+  //       appendLogs(logs);
+  //       setError(null);
+  //     } catch (err) {
+  //       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch data';
+        
+  //       if (errorMessage.includes('CORS') || errorMessage.includes('Failed to fetch')) {
+  //         setError(
+  //           'CORS error: Unable to access the endpoint. Please ensure:\n' +
+  //           '1. The endpoint is running and accessible\n' +
+  //           '2. CORS is properly configured on the server\n' +
+  //           '3. The endpoint URL is correct'
+  //         );
+  //       } else if (retryCount < MAX_RETRIES) {
+  //         setTimeout(() => {
+  //           fetchWithRetry(retryCount + 1, delay * 2);
+  //         }, delay);
+  //         return;
+  //       } else {
+  //         setError(`${errorMessage}\nMax retries reached. Please check the endpoint configuration.`);
+  //       }
+  //     }
+  //   };
+
+  //   // Initial fetch
+  //   fetchWithRetry();
+
+  //   // Set up interval for periodic fetching
+  //   const intervalId = setInterval(() => fetchWithRetry(), refreshInterval);
+
+  //   // Cleanup interval on unmount or when interval/endpoint changes
+  //   return () => clearInterval(intervalId);
+  // }, [endpointUrl, refreshInterval, latestId, setData, setError, appendLogs]);
 
   const views = {
     dashboard: <DashboardView />,
@@ -147,6 +212,10 @@ function App() {
             <div className="flex items-center">
               <PlayPauseButton />
             </div>
+            <div className="flex items-center">
+              <RefreshButton onRefresh={fetchWithRetry} />
+            </div>
+            
           </div>
         </nav>
       </header>

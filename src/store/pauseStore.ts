@@ -1,17 +1,18 @@
 import { create } from 'zustand'
 import { useSettingsStore } from './settingsStore'
 
-interface BreakState {
-  isBreak: boolean
-  setIsBreak: (isBreak: boolean) => void
-  fetchBreakState: () => Promise<void>
-  toggleBreak: () => Promise<void>
+interface PauseState {
+  isPaused: boolean
+  setIsPaused: (isBreak: boolean) => void
+  fetchPauseState: () => Promise<void>
+  togglePause: () => Promise<void>
+  reset: () => void
 }
 
-export const useBreakStore = create<BreakState>((set, get) => ({
-  isBreak: false,
-  setIsBreak: (isBreak) => set({ isBreak }),
-  fetchBreakState: async () => {
+export const usePauseStore = create<PauseState>((set, get) => ({
+  isPaused: false,
+  setIsPaused: (isPaused) => set({ isPaused: isPaused }),
+  fetchPauseState: async () => {
     const { endpointUrl } = useSettingsStore.getState()
     try {
       const response = await fetch(`${endpointUrl}/break`, {
@@ -27,13 +28,13 @@ export const useBreakStore = create<BreakState>((set, get) => ({
         throw new Error(`HTTP error! status: ${response.status}`)
       }
       
-      const isBreak = await response.json()
-      set({ isBreak })
+      const isPause = await response.json()
+      set({ isPaused: isPause })
     } catch (error) {
-      console.error('Failed to fetch break state:', error)
+      console.error('Failed to fetch pause state:', error)
     }
   },
-  toggleBreak: async () => {
+  togglePause: async () => {
     const { endpointUrl } = useSettingsStore.getState()
     
     try {
@@ -51,9 +52,10 @@ export const useBreakStore = create<BreakState>((set, get) => ({
       }
       
       // After successful toggle, fetch the current state
-      await get().fetchBreakState()
+      await get().fetchPauseState()
     } catch (error) {
       console.error('Failed to toggle break state:', error)
     }
-  }
-}))
+  },
+  reset: () => set({ isPaused: false })
+}));

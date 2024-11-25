@@ -14,7 +14,6 @@ type LogLevel = keyof typeof levelColors;
 type SortField = 'timestamp' | 'level' | 'agent' | 'message';
 type SortDirection = 'asc' | 'desc';
 
-// Type guard to ensure log level is valid
 function isValidLogLevel(level: string): level is LogLevel {
   return Object.keys(levelColors).includes(level);
 }
@@ -25,29 +24,18 @@ function LogsView() {
   const [sortField, setSortField] = useState<SortField>('timestamp');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [newLogIds, setNewLogIds] = useState<Set<string>>(new Set());
-  const logs = useLogStore((state) => state.logs);
-  const latestId = useLogStore((state) => state.latestId);
+  const { logs, latestId } = useLogStore();
+  const [error] = useState<string | null>(null);
 
-  // Track new logs
   useEffect(() => {
-    if (!latestId) return;
+    // Get new IDs by comparing with previous logs
+    const newIds = new Set(logs.slice(-5).map(log => log.id));
+    setNewLogIds(newIds);
+    // Clear highlighting after 2 seconds
+    const timer = setTimeout(() => setNewLogIds(new Set()), 2000);
+    return () => clearTimeout(timer);
+  }, [logs]);
 
-    const latestIndex = logs.findIndex(log => log.id === latestId);
-    if (latestIndex === -1) return;
-
-    // Get IDs of all logs after the latest known ID
-    const newIds = new Set(logs.slice(latestIndex + 1).map(log => log.id));
-
-    if (newIds.size > 0) {
-      setNewLogIds(newIds);
-      // Clear highlight after 2 seconds
-      setTimeout(() => {
-        setNewLogIds(new Set());
-      }, 2000);
-    }
-  }, [logs, latestId]);
-
-  // Sort logs
   const sortLogs = (a: Log, b: Log) => {
     let comparison = 0;
     switch (sortField) {
@@ -55,35 +43,35 @@ function LogsView() {
         comparison = new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
         break;
       case 'level':
-        comparison = a.level.localeCompare(b.level);
+        comparison = (a.level || '').localeCompare(b.level || '');
         break;
       case 'agent':
-        comparison = a.agent.localeCompare(b.agent);
+        comparison = (a.agent || '').localeCompare(b.agent || '');
         break;
       case 'message':
-        comparison = a.message.localeCompare(b.message);
+        comparison = (a.message || '').localeCompare(b.message || '');
         break;
     }
     return sortDirection === 'asc' ? comparison : -comparison;
   };
 
-  // Filter logs based on search term
-  const filteredLogs = logs
-    .filter(log => 
-      log.agent.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      log.message.toLowerCase().includes(searchTerm.toLowerCase())
-    )
+  const filteredLogs = (logs || [])
+    .filter(log => {
+      if (!searchTerm) return true;
+      const term = searchTerm.toLowerCase();
+      const agent = (log.agent || '').toLowerCase();
+      const message = (log.message || '').toLowerCase();
+      return agent.includes(term) || message.includes(term);
+    })
     .sort(sortLogs);
 
-  // Helper function to get color class safely
   const getColorClass = (level: string) => {
     if (isValidLogLevel(level)) {
       return levelColors[level];
     }
-    return levelColors.INFO; // fallback to INFO if invalid level
+    return levelColors.INFO;
   };
 
-  // Handle column header click
   const handleSort = (field: SortField) => {
     if (field === sortField) {
       setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
@@ -93,7 +81,6 @@ function LogsView() {
     }
   };
 
-  // Render sort indicator
   const renderSortIndicator = (field: SortField) => {
     if (sortField !== field) return null;
     return sortDirection === 'asc' ? 
@@ -103,6 +90,17 @@ function LogsView() {
 
   return (
     <div className="bg-white rounded-lg shadow-sm">
+      {/* Debug Info */}
+      {latestId && (
+        <div className="bg-gray-100 p-2 text-xs text-gray-600 border-b border-gray-200">
+          Latest ID: {latestId}
+        </div>
+      )}
+      {error && (
+        <div className="bg-red-100 text-red-700 p-2 text-sm border-b border-red-200">
+          Error: {error}
+        </div>
+      )}
       {/* Search and Filters */}
       <div className="p-4 border-b border-gray-200">
         <div className="flex space-x-4">

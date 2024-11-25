@@ -6,6 +6,7 @@ interface DataState {
   setData: (data: Span[] | null) => void;
   error: string | null;
   setError: (error: string | null) => void;
+  reset: () => void;
 }
 
 export const useDataStore = create<DataState>((set) => ({
@@ -13,4 +14,5 @@ export const useDataStore = create<DataState>((set) => ({
   setData: (data) => set({ data }),
   error: null,
   setError: (error) => set({ error }),
+  reset: () => set({ data: null, error: null })
 }));

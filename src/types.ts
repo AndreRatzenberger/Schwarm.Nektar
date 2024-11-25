@@ -8,7 +8,8 @@ export interface Log {
 }
 
 export interface Span {
+  id: string;
   name: string;
-  timestamp: string;
+  start_time: string;
   [key: string]: unknown;
 }
