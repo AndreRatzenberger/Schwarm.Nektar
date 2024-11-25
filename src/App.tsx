@@ -28,11 +28,26 @@ function transformSpansToLogs(spans: Span[]): Log[] {
     const isError = span.status_code == 'ERROR';
     const timestamp = new Date(Number(span.start_time) / 1_000_000).toISOString();
     
+    let level: Log['level'] = 'LOG';
+    if (isError) {
+      level = 'ERROR';
+    } else if (isEventType) {
+      const eventType = activity.replace("EventType.", "");
+      if (eventType === 'START_TURN' || eventType === 'INSTRUCTION' || 
+          eventType === 'MESSAGE' || eventType === 'POST_MESSAGE' || 
+          eventType === 'TOOL_EXECUTION' || eventType === 'POST_TOOL_EXECUTION' || 
+          eventType === 'HANDOFF') {
+        level = eventType;
+      } else {
+        level = 'INFO';
+      }
+    }
+    
     return {
       id: span.id,
       timestamp,
       parent_id: span.parent_id,
-      level: isError ? 'ERROR' : (isEventType ? activity.replace("EventType.", "") : 'LOG'),
+      level,
       agent: isStart ? 'System' : agent,
       message: isStart ? 'Agent Framework Started' : `Agent ${span.name} activity`,
       details: span
@@ -44,7 +59,7 @@ function App() {
   const [currentView, setCurrentView] = React.useState<View>('dashboard');
   const { setData, setError } = useDataStore();
   const {  appendLogs, setLogs } = useLogStore();
-  const { endpointUrl, refreshInterval } = useSettingsStore();
+  const { endpointUrl, refreshInterval, showRefreshButton } = useSettingsStore();
 
   const fetchWithRetry = useCallback(async (retryCount = 0, delay = INITIAL_RETRY_DELAY) => {
     try {
@@ -159,10 +174,11 @@ function App() {
             <div className="flex items-center">
               <PlayPauseButton />
             </div>
-            <div className="flex items-center">
-              <RefreshButton onRefresh={fetchWithRetry} />
-            </div>
-            
+            {showRefreshButton && (
+              <div className="flex items-center">
+                <RefreshButton onRefresh={fetchWithRetry} />
+              </div>
+            )}
           </div>
         </nav>
       </header>

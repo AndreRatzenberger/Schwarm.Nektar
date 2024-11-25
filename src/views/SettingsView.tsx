@@ -4,8 +4,6 @@ import { useLogStore } from '../store/logStore';
 import { useDataStore } from '../store/dataStore';
 import { usePauseStore } from '../store/pauseStore';
 import RawDataView from './RawDataView';
-import { RefreshCw } from 'lucide-react';
-
 
 const REFRESH_INTERVALS = [
   { label: 'Off', value: null },
@@ -24,8 +22,10 @@ export default function SettingsView() {
   const { 
     endpointUrl, 
     refreshInterval,
+    showRefreshButton,
     setEndpointUrl,
-    setRefreshInterval
+    setRefreshInterval,
+    setShowRefreshButton
   } = useSettingsStore();
 
   const clearAllStores = () => {
@@ -41,7 +41,6 @@ export default function SettingsView() {
       <h2 className="text-lg font-medium text-gray-900">Application Settings</h2>
       <div className="bg-white shadow rounded-lg p-6 space-y-6">
         <div>
-        
           <label htmlFor="endpoint" className="block text-sm font-medium text-gray-700">
             Endpoint URL
           </label>
@@ -66,18 +65,36 @@ export default function SettingsView() {
           </label>
           <select
             id="refresh"
-            value={refreshInterval}
-            onChange={(e) => setRefreshInterval(Number(e.target.value))}
+            value={refreshInterval || ''}
+            onChange={(e) => setRefreshInterval(Number(e.target.value) || null)}
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
           >
             {REFRESH_INTERVALS.map(({ label, value }) => (
-              <option key={value} value={value}>
+              <option key={String(value)} value={value || ''}>
                 {label}
               </option>
             ))}
           </select>
           <p className="mt-1 text-sm text-gray-500">
             How often the application should fetch new data
+          </p>
+        </div>
+
+        <div>
+          <div className="flex items-center">
+            <input
+              id="show-refresh-button"
+              type="checkbox"
+              checked={showRefreshButton}
+              onChange={(e) => setShowRefreshButton(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            <label htmlFor="show-refresh-button" className="ml-2 block text-sm text-gray-900">
+              Show Refresh Button
+            </label>
+          </div>
+          <p className="mt-1 text-sm text-gray-500">
+            Toggle visibility of the manual refresh button in the navigation bar
           </p>
         </div>
 
@@ -122,9 +139,7 @@ export default function SettingsView() {
               >
                 Delete Data
               </button>
-              
             </div>
-            
           </div>
         </div>
       )}
