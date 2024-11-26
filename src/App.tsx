@@ -1,19 +1,19 @@
 import React, { useEffect,useCallback  } from 'react';
-import { LayoutDashboard, ScrollText, Network, BarChart, Database, Settings } from 'lucide-react';
+import { LayoutDashboard, ScrollText, Network, BarChart, Settings } from 'lucide-react';
 import DashboardView from './views/DashboardView';
 import LogsView from './views/LogsView';
 import NetworkView from './views/NetworkView';
 import MetricsView from './views/MetricsView';
-import RawDataView from './views/RawDataView';
 import SettingsView from './views/SettingsView';
 import PlayPauseButton from './components/PlayPauseButton';
 import RefreshButton from './components/RefreshButton';
+import MessageFlow from './components/message-flow';
 import { useDataStore } from './store/dataStore';
 import { useLogStore } from './store/logStore';
 import { useSettingsStore } from './store/settingsStore';
 import type { Span, Log } from './types';
 
-type View = 'dashboard' | 'logs' | 'network' | 'metrics' | 'rawdata' | 'settings';
+type View = 'dashboard' | 'messageflow' | 'logs' | 'network' | 'metrics' | 'settings';
 
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY = 1000;
@@ -21,16 +21,37 @@ const INITIAL_RETRY_DELAY = 1000;
 function transformSpansToLogs(spans: Span[]): Log[] {
   return spans.map((span) => {
     const isStart = span.name === 'SCHWARM_START';
+
+    const [agent, activity] = span.name.split('-').map(str => str.trim());
+    const isEventType = activity && activity.includes("EventType.");
+    
     const isError = span.status_code == 'ERROR';
     const timestamp = new Date(Number(span.start_time) / 1_000_000).toISOString();
+    
+    let level: Log['level'] = 'LOG';
+    if (isError) {
+      level = 'ERROR';
+    } else if (isEventType) {
+      const eventType = activity.replace("EventType.", "");
+      if (eventType === 'START_TURN' || eventType === 'INSTRUCT' || 
+          eventType === 'MESSAGE_COMPLETION' || eventType === 'POST_MESSAGE_COMPLETION' || 
+          eventType === 'TOOL_EXECUTION' || eventType === 'POST_TOOL_EXECUTION' || 
+          eventType === 'HANDOFF') {
+        level = eventType;
+      } else {
+        level = 'INFO';
+      }
+    }
     
     return {
       id: span.id,
       timestamp,
-      level: isError ? 'ERROR' : (isStart ? 'INFO' : 'DEBUG'),
-      agent: isStart ? 'System' : span.name,
+      parent_id: span.parent_id,
+      level,
+      agent: isStart ? 'System' : agent,
       message: isStart ? 'Agent Framework Started' : `Agent ${span.name} activity`,
-      details: span
+      attributes: span.attributes
+      //details: span
     };
   });
 }
@@ -39,7 +60,7 @@ function App() {
   const [currentView, setCurrentView] = React.useState<View>('dashboard');
   const { setData, setError } = useDataStore();
   const {  appendLogs, setLogs } = useLogStore();
-  const { endpointUrl, refreshInterval } = useSettingsStore();
+  const { endpointUrl, refreshInterval, showRefreshButton } = useSettingsStore();
 
   const fetchWithRetry = useCallback(async (retryCount = 0, delay = INITIAL_RETRY_DELAY) => {
     try {
@@ -73,7 +94,6 @@ function App() {
           setLogs(transformedLogs);
         }
       }
-      setData(jsonData);
       setError(null);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch data';
@@ -112,7 +132,7 @@ function App() {
     logs: <LogsView />,
     network: <NetworkView />,
     metrics: <MetricsView />,
-    rawdata: <RawDataView />,
+    messageflow: <MessageFlow />,
     settings: <SettingsView />
   };
 
@@ -121,7 +141,7 @@ function App() {
     { id: 'logs', label: 'Logs', icon: ScrollText },
     { id: 'network', label: 'Network', icon: Network },
     { id: 'metrics', label: 'Metrics', icon: BarChart },
-    { id: 'rawdata', label: 'Raw Data', icon: Database },
+    { id: 'messageflow', label: 'Message Flow', icon: ScrollText},
     { id: 'settings', label: 'Settings', icon: Settings }
   ];
 
@@ -155,10 +175,11 @@ function App() {
             <div className="flex items-center">
               <PlayPauseButton />
             </div>
-            <div className="flex items-center">
-              <RefreshButton onRefresh={fetchWithRetry} />
-            </div>
-            
+            {showRefreshButton && (
+              <div className="flex items-center">
+                <RefreshButton onRefresh={fetchWithRetry} />
+              </div>
+            )}
           </div>
         </nav>
       </header>
