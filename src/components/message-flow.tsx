@@ -137,7 +137,7 @@ export default function MessageFlow() {
             details={selectedItem?.details || {}}
           />
           <div className="flex-1 ml-4">
-            <ScrollArea className="h-[400px] w-full rounded-md border p-4" ref={scrollAreaRef}>
+            <ScrollArea className="h-[600px] w-full rounded-md border p-4" ref={scrollAreaRef}>
               <div className="space-y-4">
                 {items.map(renderItem)}
               </div>

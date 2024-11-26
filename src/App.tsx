@@ -33,8 +33,8 @@ function transformSpansToLogs(spans: Span[]): Log[] {
       level = 'ERROR';
     } else if (isEventType) {
       const eventType = activity.replace("EventType.", "");
-      if (eventType === 'START_TURN' || eventType === 'INSTRUCTION' || 
-          eventType === 'MESSAGE' || eventType === 'POST_MESSAGE' || 
+      if (eventType === 'START_TURN' || eventType === 'INSTRUCT' || 
+          eventType === 'MESSAGE_COMPLETION' || eventType === 'POST_MESSAGE_COMPLETION' || 
           eventType === 'TOOL_EXECUTION' || eventType === 'POST_TOOL_EXECUTION' || 
           eventType === 'HANDOFF') {
         level = eventType;
@@ -50,7 +50,8 @@ function transformSpansToLogs(spans: Span[]): Log[] {
       level,
       agent: isStart ? 'System' : agent,
       message: isStart ? 'Agent Framework Started' : `Agent ${span.name} activity`,
-      details: span
+      attributes: span.attributes
+      //details: span
     };
   });
 }

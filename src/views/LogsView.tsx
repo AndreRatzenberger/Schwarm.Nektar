@@ -232,7 +232,7 @@ export default function LogsView() {
                             <div>
                               <h4 className="text-sm font-medium text-gray-500 mb-2">Details</h4>
                               <div className="bg-gray-100 p-4 rounded-md overflow-auto max-h-96 border">
-                                <JsonView value={log.details} />
+                                <JsonView value={log.attributes} />
                               </div>
                             </div>
                           </CardContent>
