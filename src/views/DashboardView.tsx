@@ -112,7 +112,7 @@ function DashboardView() {
               .filter(log => log.level === 'MESSAGE_COMPLETION')
               .slice(-1)
               .map((log) => (
-                <div key={log.id} className="border-l-4 border-green-500 bg-red-50 p-4">
+                <div key={log.id} className="border-l-4 border-green-500 bg-green-50 p-4">
                   <div className="flex">
                     <div className="flex-shrink-0">
                       <Info className="h-5 w-5 text-green-400" />
