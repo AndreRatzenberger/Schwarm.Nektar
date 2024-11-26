@@ -11,10 +11,10 @@ export const useRunStore = create<RunState>((set) => ({
   activeRunId: null,
   setActiveRunId: (id) => set({ activeRunId: id }),
   findRunIdFromLogs: (logs) => {
-    // Find the most recent log without a parent_id (that's a run log)
+    // Find the most recent log with a run_id
     const runLog = [...logs]
       .reverse()
-      .find(log => !log.parent_id);
+      .find(log => log.run_id);
     return runLog?.id || null;
   }
 }));

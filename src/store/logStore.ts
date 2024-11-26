@@ -12,19 +12,10 @@ interface LogState {
   getFilteredLogs: () => Log[];
 }
 
-function isLogPartOfRun(log: Log, runId: string | null, allLogs: Log[]): boolean {
+function isLogPartOfRun(log: Log, runId: string | null): boolean {
   if (!runId) return true; // If no run is selected, show all logs
   if (log.id === runId) return true; // This is the run log itself
-  
-  // Create a map of parent_id to log for faster lookups
-  const logMap = new Map(allLogs.map(l => [l.id, l]));
-  
-  // Traverse up the parent chain until we find either the run or no more parents
-  let currentLog: Log | undefined = log;
-  while (currentLog) {
-    if (currentLog.id === runId) return true;
-    currentLog = currentLog.parent_id ? logMap.get(currentLog.parent_id) : undefined;
-  }
+  if (log.run_id === runId) return true; // This log is part of the run
   
   return false;
 }
@@ -45,6 +36,6 @@ export const useLogStore = create<LogState>((set, get) => ({
   getFilteredLogs: () => {
     const state = get();
     const activeRunId = useRunStore.getState().activeRunId;
-    return state.logs.filter(log => isLogPartOfRun(log, activeRunId, state.logs));
+    return state.logs.filter(log => isLogPartOfRun(log, activeRunId));
   }
 }));
