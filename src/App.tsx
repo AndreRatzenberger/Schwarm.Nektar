@@ -48,7 +48,7 @@ function transformSpansToLogs(spans: Span[]): Log[] {
     return {
       id: span.id,
       timestamp,
-      parent_id: span.parent_id,
+      parent_id: span.parent_span_id,
       level,
       agent: isStart ? 'System' : agent,
       message: isStart ? 'Agent Framework Started' : `Agent ${span.name} activity`,

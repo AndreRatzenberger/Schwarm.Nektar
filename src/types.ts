@@ -10,7 +10,7 @@ export interface Log {
 
 export interface Span {
   id: string;
-  parent_id: string;
+  parent_span_id: string;
   name: string;
   start_time: string;
   status_code: string;
