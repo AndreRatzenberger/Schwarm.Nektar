@@ -6,7 +6,8 @@ import CompactNetworkView from '../components/CompactNetworkView';
 import CompactMessageFlow from '../components/CompactMessageFlow';
 
 function DashboardView() {
-  const { logs } = useLogStore();
+  const getFilteredLogs = useLogStore(state => state.getFilteredLogs);
+  const logs = getFilteredLogs();
   const [tokenUsage, setTokenUsage] = useState(0);
   const [costSpent, setCostSpent] = useState(0);
   const [activeAgents, setActiveAgents] = useState(0);
@@ -26,17 +27,13 @@ function DashboardView() {
       const attributes = log.attributes as { [key: string]: any };
       totalEvents++;
       
-
       // Process START_TURN logs for token and cost data
       if (log.level === 'POST_MESSAGE_COMPLETION' && log.attributes != null) {
-      
           const rk: number = +attributes['message.info.token_counter'];
           const ck: number = +attributes['message.info.completion_cost'];
 
           maxTokens = maxTokens + rk;
           maxCost = maxCost + ck;
-            
-          
       }
     });
 
@@ -82,7 +79,7 @@ function DashboardView() {
             <DollarSign className="h-8 w-8 text-indigo-600" />
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600">Cost Spent</p>
-              <p className="text-2xl font-semibold text-gray-900">${costSpent}</p>
+              <p className="text-2xl font-semibold text-gray-900">${costSpent.toFixed(4)}</p>
             </div>
           </div>
         </div>

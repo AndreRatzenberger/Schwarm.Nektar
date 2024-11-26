@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { Log } from '../types';
+import { useRunStore } from './runStore';
 
 interface LogState {
   logs: Log[];
@@ -8,9 +9,27 @@ interface LogState {
   appendLogs: (newLogs: Log[]) => void;
   setLatestId: (id: string) => void;
   reset: () => void;
+  getFilteredLogs: () => Log[];
 }
 
-export const useLogStore = create<LogState>((set) => ({
+function isLogPartOfRun(log: Log, runId: string | null, allLogs: Log[]): boolean {
+  if (!runId) return true; // If no run is selected, show all logs
+  if (log.id === runId) return true; // This is the run log itself
+  
+  // Create a map of parent_id to log for faster lookups
+  const logMap = new Map(allLogs.map(l => [l.id, l]));
+  
+  // Traverse up the parent chain until we find either the run or no more parents
+  let currentLog: Log | undefined = log;
+  while (currentLog) {
+    if (currentLog.id === runId) return true;
+    currentLog = currentLog.parent_id ? logMap.get(currentLog.parent_id) : undefined;
+  }
+  
+  return false;
+}
+
+export const useLogStore = create<LogState>((set, get) => ({
   logs: [],
   latestId: null,
   setLogs: (logs) => set({ 
@@ -22,5 +41,10 @@ export const useLogStore = create<LogState>((set) => ({
     latestId: newLogs.length > 0 ? newLogs[newLogs.length - 1].id : state.latestId
   })),
   setLatestId: (id) => set({ latestId: id }),
-  reset: () => set({ logs: [], latestId: null })
+  reset: () => set({ logs: [], latestId: null }),
+  getFilteredLogs: () => {
+    const state = get();
+    const activeRunId = useRunStore.getState().activeRunId;
+    return state.logs.filter(log => isLogPartOfRun(log, activeRunId, state.logs));
+  }
 }));

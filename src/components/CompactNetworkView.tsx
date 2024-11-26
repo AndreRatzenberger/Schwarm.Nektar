@@ -16,7 +16,8 @@ const colorPalette = [
   ];
 
 function CompactNetworkView() {
-  const { logs } = useLogStore();
+  const getFilteredLogs = useLogStore(state => state.getFilteredLogs);
+  const logs = getFilteredLogs();
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
 

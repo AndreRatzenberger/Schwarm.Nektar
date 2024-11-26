@@ -13,8 +13,7 @@ const levelColors = {
   ERROR: { bg: 'bg-red-100', text: 'text-red-800' },
   LOG: { bg: 'bg-gray-100', text: 'text-gray-800' },
   START_TURN: { bg: 'bg-green-100', text: 'text-green-800' },
-  INSTRUCTION: { bg: 'bg-purple-100', text: 'text-purple-800' },
-  MESSAGE: { bg: 'bg-indigo-100', text: 'text-indigo-800' },
+  INSTRUCT: { bg: 'bg-purple-100', text: 'text-purple-800' },
   MESSAGE_COMPLETION: { bg: 'bg-indigo-100', text: 'text-indigo-800' },
   POST_MESSAGE_COMPLETION: { bg: 'bg-teal-100', text: 'text-teal-800' },
   TOOL_EXECUTION: { bg: 'bg-orange-100', text: 'text-orange-800' },
@@ -32,14 +31,15 @@ export default function MessageFlow() {
   const [selectedItem, setSelectedItem] = useState<ChatLog | null>(null)
   const [agentSides, setAgentSides] = useState<Map<string, 'left' | 'right'>>(new Map())
   const scrollAreaRef = useRef<HTMLDivElement>(null)
-  const { logs } = useLogStore()
+  const getFilteredLogs = useLogStore(state => state.getFilteredLogs)
+  const logs = getFilteredLogs()
 
   useEffect(() => {
     // Filter and transform logs to chat format
     const chatLogs = logs
       .filter((log): log is Log & { level: keyof typeof levelColors } => 
-        log.level === 'INSTRUCTION' || 
-        log.level === 'MESSAGE' || 
+        log.level === 'INSTRUCT' || 
+        log.level === 'MESSAGE_COMPLETION' || 
         log.level === 'START_TURN' || 
         log.level === 'TOOL_EXECUTION'
       )
@@ -134,7 +134,7 @@ export default function MessageFlow() {
         <div className="flex">
           <AgentDetailsPanel
             agent={selectedItem?.agent || 'No Selection'}
-            details={selectedItem?.details || {}}
+            details={selectedItem?.attributes || {}}
           />
           <div className="flex-1 ml-4">
             <ScrollArea className="h-[600px] w-full rounded-md border p-4" ref={scrollAreaRef}>

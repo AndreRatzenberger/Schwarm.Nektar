@@ -8,8 +8,10 @@ import SettingsView from './views/SettingsView';
 import PlayPauseButton from './components/PlayPauseButton';
 import RefreshButton from './components/RefreshButton';
 import MessageFlow from './components/message-flow';
+import { ActiveRunBanner } from './components/ActiveRunBanner';
 import { useDataStore } from './store/dataStore';
 import { useLogStore } from './store/logStore';
+import { useRunStore } from './store/runStore';
 import { useSettingsStore } from './store/settingsStore';
 import type { Span, Log } from './types';
 
@@ -51,7 +53,6 @@ function transformSpansToLogs(spans: Span[]): Log[] {
       agent: isStart ? 'System' : agent,
       message: isStart ? 'Agent Framework Started' : `Agent ${span.name} activity`,
       attributes: span.attributes
-      //details: span
     };
   });
 }
@@ -59,7 +60,8 @@ function transformSpansToLogs(spans: Span[]): Log[] {
 function App() {
   const [currentView, setCurrentView] = React.useState<View>('dashboard');
   const { setData, setError } = useDataStore();
-  const {  appendLogs, setLogs } = useLogStore();
+  const { appendLogs, setLogs } = useLogStore();
+  const { findRunIdFromLogs, setActiveRunId } = useRunStore();
   const { endpointUrl, refreshInterval, showRefreshButton } = useSettingsStore();
 
   const fetchWithRetry = useCallback(async (retryCount = 0, delay = INITIAL_RETRY_DELAY) => {
@@ -70,7 +72,7 @@ function App() {
       if (currentLatestId) {
         url.searchParams.append('after_id', currentLatestId);
       }
-      console.log(currentLatestId)
+      
       const response = await fetch(url, {
         method: 'GET',
         mode: 'cors',
@@ -93,6 +95,12 @@ function App() {
         } else {
           setLogs(transformedLogs);
         }
+        
+        // Update active run ID when new logs arrive
+        const runId = findRunIdFromLogs(transformedLogs);
+        if (runId) {
+          setActiveRunId(runId);
+        }
       }
       setError(null);
     } catch (err) {
@@ -114,8 +122,7 @@ function App() {
         setError(`${errorMessage}\nMax retries reached. Please check the endpoint configuration.`);
       }
     }
-  }, [endpointUrl, setData, setError, appendLogs, setLogs]);
-
+  }, [endpointUrl, setData, setError, appendLogs, setLogs, findRunIdFromLogs, setActiveRunId]);
 
   useEffect(() => {
     fetchWithRetry();
@@ -126,7 +133,6 @@ function App() {
     return () => clearInterval(intervalId);
   }, [fetchWithRetry, refreshInterval]);
 
-  
   const views = {
     dashboard: <DashboardView />,
     logs: <LogsView />,
@@ -183,6 +189,8 @@ function App() {
           </div>
         </nav>
       </header>
+
+      <ActiveRunBanner />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {views[currentView]}

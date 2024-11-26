@@ -32,7 +32,8 @@ type ConnectionData = {
 };
 
 function NetworkView() {
-  const { logs } = useLogStore();
+  const getFilteredLogs = useLogStore(state => state.getFilteredLogs);
+  const logs = getFilteredLogs();
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);

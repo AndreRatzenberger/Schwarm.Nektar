@@ -1,14 +1,15 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Search, Clock, ChevronUp, ChevronDown } from 'lucide-react'
+import { Search, Clock, ChevronUp, ChevronDown, ChevronRight } from 'lucide-react'
 import { useLogStore } from '../store/logStore'
+import { useSettingsStore } from '../store/settingsStore'
 import type { Log } from '../types'
 import JsonView from '@uiw/react-json-view'
-import { Input } from '@/components/ui/input'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { Input } from '../components/ui/input'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table'
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
+import { Badge } from '../components/ui/badge'
 
 const levelColors = {
   INFO: { bg: 'bg-blue-100', text: 'text-blue-800', border: 'border-blue-200', dot: 'bg-blue-400' },
@@ -28,8 +29,52 @@ type LogLevel = keyof typeof levelColors
 type SortField = 'timestamp' | 'level' | 'agent' | 'message'
 type SortDirection = 'asc' | 'desc'
 
+interface LogNode extends Log {
+  children: LogNode[];
+  depth: number;
+  isExpanded?: boolean;
+}
+
 function isValidLogLevel(level: string): level is LogLevel {
   return Object.keys(levelColors).includes(level)
+}
+
+function buildLogTree(logs: Log[]): LogNode[] {
+  const logMap = new Map<string, LogNode>();
+  const rootNodes: LogNode[] = [];
+
+  // First pass: create all nodes
+  logs.forEach(log => {
+    logMap.set(log.id, { ...log, children: [], depth: 0 });
+  });
+
+  // Second pass: build tree structure
+  logs.forEach(log => {
+    const node = logMap.get(log.id)!;
+    if (log.parent_id && logMap.has(log.parent_id)) {
+      const parent = logMap.get(log.parent_id)!;
+      parent.children.push(node);
+      node.depth = parent.depth + 1;
+    } else {
+      rootNodes.push(node);
+    }
+  });
+
+  return rootNodes;
+}
+
+function flattenTree(nodes: LogNode[], expanded: Set<string>): LogNode[] {
+  const result: LogNode[] = [];
+  
+  function flatten(node: LogNode) {
+    result.push(node);
+    if (expanded.has(node.id) && node.children.length > 0) {
+      node.children.forEach(child => flatten(child));
+    }
+  }
+  
+  nodes.forEach(node => flatten(node));
+  return result;
 }
 
 export default function LogsView() {
@@ -38,8 +83,11 @@ export default function LogsView() {
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [newLogIds, setNewLogIds] = useState<Set<string>>(new Set())
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null)
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [activeFilters, setActiveFilters] = useState<Set<LogLevel>>(new Set())
-  const { logs } = useLogStore()
+  const getFilteredLogs = useLogStore(state => state.getFilteredLogs)
+  const { groupLogsByParent, showLogIndentation } = useSettingsStore()
+  const logs = getFilteredLogs()
 
   useEffect(() => {
     const newIds = new Set(logs.slice(-5).map(log => log.id))
@@ -51,6 +99,18 @@ export default function LogsView() {
   const handleRowClick = (logId: string) => {
     setExpandedLogId(expandedLogId === logId ? null : logId)
   }
+
+  const toggleGroup = (logId: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(logId)) {
+        next.delete(logId);
+      } else {
+        next.add(logId);
+      }
+      return next;
+    });
+  };
 
   const toggleFilter = (level: LogLevel) => {
     setActiveFilters(prev => {
@@ -83,20 +143,25 @@ export default function LogsView() {
     return sortDirection === 'asc' ? comparison : -comparison
   }
 
-  const filteredLogs = (logs || [])
-    .filter(log => {
-      if (!searchTerm && activeFilters.size === 0) return true
-      
-      const matchesSearch = !searchTerm || 
-        (log.agent || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
-        (log.message || '').toLowerCase().includes(searchTerm.toLowerCase())
-      
-      const matchesFilter = activeFilters.size === 0 || 
-        (isValidLogLevel(log.level) && activeFilters.has(log.level))
-      
-      return matchesSearch && matchesFilter
-    })
-    .sort(sortLogs)
+  const filterLogs = (log: Log) => {
+    if (!searchTerm && activeFilters.size === 0) return true
+    
+    const matchesSearch = !searchTerm || 
+      (log.agent || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+      (log.message || '').toLowerCase().includes(searchTerm.toLowerCase())
+    
+    const matchesFilter = activeFilters.size === 0 || 
+      (isValidLogLevel(log.level) && activeFilters.has(log.level))
+    
+    return matchesSearch && matchesFilter
+  }
+
+  let displayLogs = logs.filter(filterLogs).sort(sortLogs);
+
+  if (groupLogsByParent) {
+    const tree = buildLogTree(displayLogs);
+    displayLogs = flattenTree(tree, expandedGroups);
+  }
 
   const getLogColors = (level: string) => {
     if (isValidLogLevel(level)) {
@@ -162,6 +227,7 @@ export default function LogsView() {
           <Table>
             <TableHeader>
               <TableRow>
+                {groupLogsByParent && <TableHead className="w-8"></TableHead>}
                 <TableHead onClick={() => handleSort('timestamp')} className="cursor-pointer">
                   Timestamp {renderSortIndicator('timestamp')}
                 </TableHead>
@@ -171,23 +237,41 @@ export default function LogsView() {
                 <TableHead onClick={() => handleSort('level')} className="cursor-pointer">
                   Event Type {renderSortIndicator('level')}
                 </TableHead>
-                
                 <TableHead onClick={() => handleSort('message')} className="cursor-pointer">
                   Message {renderSortIndicator('message')}
                 </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredLogs.map((log) => (
+              {displayLogs.map((log) => (
                 <React.Fragment key={log.id}>
                   <TableRow
                     onClick={() => handleRowClick(log.id)}
                     className={`cursor-pointer transition-all duration-200 hover:bg-gray-50
                       ${newLogIds.has(log.id) ? 'animate-highlight' : ''}`}
                   >
+                    {groupLogsByParent && (
+                      <TableCell className="w-8">
+                        {(log as LogNode).children?.length > 0 && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleGroup(log.id);
+                            }}
+                            className="p-1 hover:bg-gray-100 rounded"
+                          >
+                            <ChevronRight
+                              className={`h-4 w-4 transition-transform ${
+                                expandedGroups.has(log.id) ? 'rotate-90' : ''
+                              }`}
+                            />
+                          </button>
+                        )}
+                      </TableCell>
+                    )}
                     <TableCell>
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center">
+                        <div className={`flex items-center ${showLogIndentation ? `ml-${(log as LogNode).depth * 4}` : ''}`}>
                           <Clock className="h-4 w-8 mr-2 text-gray-400" />
                           {new Date(log.timestamp).toLocaleString()}
                         </div>
@@ -201,12 +285,11 @@ export default function LogsView() {
                         {log.level}
                       </Badge>
                     </TableCell>
-                    
                     <TableCell>{log.message}</TableCell>
                   </TableRow>
                   {expandedLogId === log.id && (
                     <TableRow>
-                      <TableCell colSpan={4}>
+                      <TableCell colSpan={groupLogsByParent ? 5 : 4}>
                         <Card className="mt-2 mb-4">
                           <CardContent className="p-4">
                             <div className="grid grid-cols-2 gap-4 mb-4">

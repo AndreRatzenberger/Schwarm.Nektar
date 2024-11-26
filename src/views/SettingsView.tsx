@@ -3,6 +3,7 @@ import { useSettingsStore } from '../store/settingsStore';
 import { useLogStore } from '../store/logStore';
 import { useDataStore } from '../store/dataStore';
 import { usePauseStore } from '../store/pauseStore';
+import { useRunStore } from '../store/runStore';
 import RawDataView from './RawDataView';
 import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
@@ -29,15 +30,20 @@ export default function SettingsView() {
     endpointUrl, 
     refreshInterval,
     showRefreshButton,
+    groupLogsByParent,
+    showLogIndentation,
     setEndpointUrl,
     setRefreshInterval,
-    setShowRefreshButton
+    setShowRefreshButton,
+    setGroupLogsByParent,
+    setShowLogIndentation
   } = useSettingsStore();
 
   const clearAllStores = () => {
     useLogStore.getState().reset();
     useDataStore.getState().reset();
     usePauseStore.getState().reset();
+    useRunStore.getState().setActiveRunId(null);
     setShowConfirmation(false);
   };
 
@@ -110,6 +116,50 @@ export default function SettingsView() {
               <p className="text-sm text-muted-foreground">
                 Toggle visibility of the manual refresh button in the navigation bar
               </p>
+            </div>
+          </div>
+
+          <div className="border-t border-border pt-4">
+            <h3 className="text-sm font-medium mb-4">Log View Settings</h3>
+            
+            <div className="space-y-4">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="group-logs"
+                  checked={groupLogsByParent}
+                  onCheckedChange={(checked: boolean) => setGroupLogsByParent(checked)}
+                />
+                <div className="space-y-1">
+                  <Label
+                    htmlFor="group-logs"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  >
+                    Group Logs by Parent
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    Group and allow collapsing of logs based on their parent-child relationships
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="show-indentation"
+                  checked={showLogIndentation}
+                  onCheckedChange={(checked: boolean) => setShowLogIndentation(checked)}
+                />
+                <div className="space-y-1">
+                  <Label
+                    htmlFor="show-indentation"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  >
+                    Show Log Indentation
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    Indent logs to visualize their hierarchy level
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
 
