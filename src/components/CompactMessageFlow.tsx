@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { MessageSquare } from 'lucide-react'
 import { useLogStore } from '../store/logStore'
 import { ScrollArea } from './ui/scroll-area'
+import { formatTextToEventType } from '../lib/utils'
 import type { Log } from '../types'
 
 const levelColors = {
@@ -69,11 +70,11 @@ export default function CompactMessageFlow() {
           <div className="flex items-center space-x-2">
             <MessageSquare className="h-3 w-3" />
             <span className="font-semibold text-xs">
-              {item.agent}
+              {item.agent} - {item.level}
             </span>
           </div>
           <p className="text-xs mt-1 line-clamp-2">
-            {item.message}
+            {formatTextToEventType(item)}
           </p>
         </div>
       </div>
