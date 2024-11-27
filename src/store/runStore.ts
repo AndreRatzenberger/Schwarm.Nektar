@@ -15,6 +15,6 @@ export const useRunStore = create<RunState>((set) => ({
     const runLog = [...logs]
       .reverse()
       .find(log => log.run_id);
-    return runLog?.id || null;
+    return runLog?.run_id || null;
   }
 }));

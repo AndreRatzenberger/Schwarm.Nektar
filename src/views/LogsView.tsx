@@ -26,7 +26,7 @@ const levelColors = {
 } as const;
 
 type LogLevel = keyof typeof levelColors
-type SortField = 'timestamp' | 'level' | 'agent' | 'message'
+type SortField = 'timestamp' | 'level' | 'agent' | 'message' | 'current_turn'
 type SortDirection = 'asc' | 'desc'
 
 interface LogNode extends Log {
@@ -85,16 +85,24 @@ export default function LogsView() {
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [activeFilters, setActiveFilters] = useState<Set<LogLevel>>(new Set())
+  const [filteredLogs, setFilteredLogs] = useState<Log[]>([])
   const getFilteredLogs = useLogStore(state => state.getFilteredLogs)
   const { groupLogsByParent, showLogIndentation } = useSettingsStore()
-  const logs = getFilteredLogs()
 
+  // Update filtered logs when filters change
   useEffect(() => {
-    const newIds = new Set(logs.slice(-5).map(log => log.id))
+    const logs = getFilteredLogs()
+    const filtered = logs.filter(filterLogs).sort(sortLogs)
+    setFilteredLogs(filtered)
+  }, [getFilteredLogs, searchTerm, activeFilters, sortField, sortDirection])
+
+  // Handle new log highlighting
+  useEffect(() => {
+    const newIds = new Set(filteredLogs.slice(-5).map(log => log.id))
     setNewLogIds(newIds)
     const timer = setTimeout(() => setNewLogIds(new Set()), 2000)
     return () => clearTimeout(timer)
-  }, [logs])
+  }, [filteredLogs])
 
   const handleRowClick = (logId: string) => {
     setExpandedLogId(expandedLogId === logId ? null : logId)
@@ -130,6 +138,9 @@ export default function LogsView() {
       case 'timestamp':
         comparison = new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
         break
+      case 'current_turn':
+          comparison = (a.attributes['current_turn'] || '').localeCompare(b.attributes['current_turn'] || '')
+          break
       case 'level':
         comparison = (a.level || '').localeCompare(b.level || '')
         break
@@ -156,7 +167,7 @@ export default function LogsView() {
     return matchesSearch && matchesFilter
   }
 
-  let displayLogs = logs.filter(filterLogs).sort(sortLogs);
+  let displayLogs = filteredLogs;
 
   if (groupLogsByParent) {
     const tree = buildLogTree(displayLogs);
@@ -231,6 +242,10 @@ export default function LogsView() {
                 <TableHead onClick={() => handleSort('timestamp')} className="cursor-pointer">
                   Timestamp {renderSortIndicator('timestamp')}
                 </TableHead>
+
+                <TableHead onClick={() => handleSort('current_turn')} className="cursor-pointer">
+                  Turn {renderSortIndicator('current_turn')}
+                </TableHead>
                 <TableHead onClick={() => handleSort('agent')} className="cursor-pointer">
                   Agent {renderSortIndicator('agent')}
                 </TableHead>
@@ -279,6 +294,7 @@ export default function LogsView() {
                           ${expandedLogId === log.id ? 'rotate-180' : ''}`} />
                       </div>
                     </TableCell>
+                    <TableCell>{log.attributes['current_turn'] as string}</TableCell>
                     <TableCell className="font-medium">{log.agent}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className={`${getLogColors(log.level).bg} ${getLogColors(log.level).text}`}>
@@ -289,7 +305,7 @@ export default function LogsView() {
                   </TableRow>
                   {expandedLogId === log.id && (
                     <TableRow>
-                      <TableCell colSpan={groupLogsByParent ? 5 : 4}>
+                      <TableCell colSpan={groupLogsByParent ? 6 : 4}>
                         <Card className="mt-2 mb-4">
                           <CardContent className="p-4">
                             <div className="grid grid-cols-2 gap-4 mb-4">

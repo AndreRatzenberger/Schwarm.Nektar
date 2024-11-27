@@ -2,11 +2,13 @@
 import React, { useEffect, useState } from 'react';
 import { Info, Clock, Cpu, DollarSign } from 'lucide-react';
 import { useLogStore } from '../store/logStore';
+import { useRunStore, activeRunId } from '../store/runStore';
 import CompactNetworkView from '../components/CompactNetworkView';
 import CompactMessageFlow from '../components/CompactMessageFlow';
 
 function DashboardView() {
   const getFilteredLogs = useLogStore(state => state.getFilteredLogs);
+  const activeRunId = useRunStore(state => state.activeRunId);
   const logs = getFilteredLogs();
   const [tokenUsage, setTokenUsage] = useState(0);
   const [costSpent, setCostSpent] = useState(0);
@@ -15,12 +17,13 @@ function DashboardView() {
 
   useEffect(() => {
     // Calculate token usage and cost from START_TURN logs
-    let maxTokens = tokenUsage;
-    let maxCost = costSpent;
+    let maxTokens = 0; 
+    let maxCost = 0;
     const seenAgents = new Set();
     let totalEvents = 0;
     
     logs.forEach(log => {
+      if (log.run_id !== activeRunId) return;
       // Track unique agents
       seenAgents.add(log.agent);
 
@@ -41,7 +44,7 @@ function DashboardView() {
     setCostSpent(maxCost);
     setActiveAgents(seenAgents.size);
     setEventsTotal(totalEvents);
-  }, [logs]);
+  }, [costSpent, logs, tokenUsage]);
 
   return (
     <div className="space-y-6">
