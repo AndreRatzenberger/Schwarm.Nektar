@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
-import ReactFlow, { Background, Controls, Edge, Node, MarkerType } from 'reactflow';
+import React, { useState, useMemo } from 'react';
+import ReactFlow, { Background, Controls, MarkerType, Edge, Node } from 'reactflow';
 import { useLogStore } from '../store/logStore';
 import 'reactflow/dist/style.css';
 
-// Predefined set of distinct colors
+// Moved outside component to prevent recreation
 const colorPalette = [
   { bg: 'bg-blue-100', text: 'text-blue-800', color: '#3B82F6' },
   { bg: 'bg-purple-100', text: 'text-purple-800', color: '#8B5CF6' },
@@ -16,108 +16,93 @@ const colorPalette = [
   { bg: 'bg-indigo-100', text: 'text-indigo-800', color: '#6366F1' }
 ];
 
-type AgentData = {
-  events: number;
-  eventTypes: Map<string, number>;
-  lastEventTime: string;
-  incomingEvents: Map<string, Map<string, number>>;
-  outgoingEvents: Map<string, Map<string, number>>;
-  colorIndex: number;
+// Default edge options moved outside to prevent recreation
+const defaultEdgeOptions = {
+  type: 'smoothstep',
+  style: { strokeWidth: 2 }
 };
 
-type ConnectionData = {
+interface AgentData {
+  events: number;
+  eventTypes: Map<string, number>;
+  colorIndex: number;
+  lastEventTime: string;
+}
+
+interface ConnectionData {
   count: number;
   eventTypes: Map<string, number>;
-  lastTimestamp: string;
-};
+}
 
 function NetworkView() {
   const getFilteredLogs = useLogStore(state => state.getFilteredLogs);
-  const logs = getFilteredLogs();
-  const [nodes, setNodes] = useState<Node[]>([]);
-  const [edges, setEdges] = useState<Edge[]>([]);
+  const logs = useMemo(() => getFilteredLogs(), [getFilteredLogs]);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
 
-  useEffect(() => {
-    const agents = new Map<string, AgentData>();
-    const connections = new Map<string, ConnectionData>();
+  // Memoize the graph data processing
+  const { nodes, edges } = useMemo(() => {
+    const agentMap = new Map<string, AgentData>();
+    const connectionMap = new Map<string, ConnectionData>();
+    let nextColorIndex = 0;
     let latestTimestamp = '';
     let latestConnection = '';
-    let nextColorIndex = 0;
 
-    // Initialize agent data with color assignments
+    // First pass: Initialize agents
     logs.forEach(log => {
-      if (!agents.has(log.agent)) {
-        agents.set(log.agent, {
+      if (!agentMap.has(log.agent)) {
+        agentMap.set(log.agent, {
           events: 0,
-          eventTypes: new Map(),
-          lastEventTime: log.timestamp,
-          incomingEvents: new Map(),
-          outgoingEvents: new Map(),
-          colorIndex: nextColorIndex++ % colorPalette.length
+          eventTypes: new Map<string, number>(),
+          colorIndex: nextColorIndex++ % colorPalette.length,
+          lastEventTime: log.timestamp
         });
       }
     });
 
-    // Process logs to gather detailed information
-    logs.forEach(log => {
-      const agent = agents.get(log.agent)!;
-      agent.events++;
-      agent.lastEventTime = log.timestamp;
+    // Second pass: Process connections and events
+    for (let i = 1; i < logs.length; i++) {
+      const currentLog = logs[i];
+      const prevLog = logs[i - 1];
+      const agent = agentMap.get(currentLog.agent);
       
-      const currentCount = agent.eventTypes.get(log.level) || 0;
-      agent.eventTypes.set(log.level, currentCount + 1);
+      if (agent) {
+        // Update agent stats
+        agent.events++;
+        agent.lastEventTime = currentLog.timestamp;
+        agent.eventTypes.set(
+          currentLog.level,
+          (agent.eventTypes.get(currentLog.level) || 0) + 1
+        );
 
-      if (logs.indexOf(log) > 0) {
-        const prevLog = logs[logs.indexOf(log) - 1];
-        if (prevLog.agent !== log.agent) {
-          // Update connection data
-          const connectionKey = `${prevLog.agent}-${log.agent}`;
-          const existing = connections.get(connectionKey) || {
+        // Process connections
+        if (prevLog.agent !== currentLog.agent) {
+          const connectionKey = `${prevLog.agent}-${currentLog.agent}`;
+          const connection = connectionMap.get(connectionKey) || {
             count: 0,
-            eventTypes: new Map(),
-            lastTimestamp: ''
+            eventTypes: new Map<string, number>()
           };
-          
-          existing.count++;
-          existing.lastTimestamp = log.timestamp;
-          const eventTypeCount = existing.eventTypes.get(log.level) || 0;
-          existing.eventTypes.set(log.level, eventTypeCount + 1);
-          connections.set(connectionKey, existing);
 
-          // Track incoming and outgoing events
-          const sourceAgent = agents.get(prevLog.agent)!;
-          const targetAgent = agents.get(log.agent)!;
+          connection.count++;
+          connection.eventTypes.set(
+            currentLog.level,
+            (connection.eventTypes.get(currentLog.level) || 0) + 1
+          );
+          connectionMap.set(connectionKey, connection);
 
-          if (!sourceAgent.outgoingEvents.has(log.agent)) {
-            sourceAgent.outgoingEvents.set(log.agent, new Map());
-          }
-          if (!targetAgent.incomingEvents.has(prevLog.agent)) {
-            targetAgent.incomingEvents.set(prevLog.agent, new Map());
-          }
-
-          const outgoingCount = sourceAgent.outgoingEvents.get(log.agent)!.get(log.level) || 0;
-          const incomingCount = targetAgent.incomingEvents.get(prevLog.agent)!.get(log.level) || 0;
-          
-          sourceAgent.outgoingEvents.get(log.agent)!.set(log.level, outgoingCount + 1);
-          targetAgent.incomingEvents.get(prevLog.agent)!.set(log.level, incomingCount + 1);
-
-          // Track latest interaction
-          if (log.timestamp > latestTimestamp) {
-            latestTimestamp = log.timestamp;
+          if (currentLog.timestamp > latestTimestamp) {
+            latestTimestamp = currentLog.timestamp;
             latestConnection = connectionKey;
           }
         }
       }
-    });
+    }
 
     // Create nodes
-    const nodeArray: Node[] = Array.from(agents.entries()).map(([name, data], index) => {
-      const angle = (2 * Math.PI * index) / agents.size;
+    const nodeArray: Node[] = Array.from(agentMap.entries()).map(([name, data], index) => {
+      const angle = (2 * Math.PI * index) / agentMap.size;
       const radius = 200;
       const x = 400 + radius * Math.cos(angle);
       const y = 300 + radius * Math.sin(angle);
-
       const colors = colorPalette[data.colorIndex];
       const isSelected = name === selectedAgent;
 
@@ -130,12 +115,12 @@ function NetworkView() {
               className={`p-2 rounded-lg shadow-sm border transition-all duration-200 
                 ${colors.bg} ${colors.text} 
                 ${isSelected ? 'ring-2 ring-blue-500 scale-110' : ''}`}
-              onClick={() => setSelectedAgent(isSelected ? null : name)}
+              onClick={() => setSelectedAgent(prev => prev === name ? null : name)}
             >
               <div className="font-medium text-sm">{name}</div>
               <div className="text-xs mt-1">
-                {Array.from(data.eventTypes.entries())
-                  .sort(([, a], [, b]) => b - a)
+                {[...data.eventTypes.entries()]
+                  .sort((a, b) => b[1] - a[1])
                   .slice(0, 2)
                   .map(([type, count]) => (
                     <div key={type} className="flex justify-between gap-2">
@@ -154,98 +139,68 @@ function NetworkView() {
       };
     });
 
-    // Create edges based on selection state
-    const edgeArray: Edge[] = [];
-    
-    connections.forEach((data, key) => {
-      const [source, target] = key.split('-');
-      const isLatest = key === latestConnection;
-      const sourceAgent = agents.get(source)!;
-      const sourceColors = colorPalette[sourceAgent.colorIndex];
-      
-      // If no agent is selected, show only primary interaction type
-      if (!selectedAgent) {
-        edgeArray.push({
-          id: key,
-          source,
-          target,
-          animated: isLatest,
-          type: 'smoothstep',
-          style: {
-            stroke: sourceColors.color,
-            strokeWidth: isLatest ? 3 : 1 + Math.min(data.count / 2, 3),
-            strokeDasharray: isLatest ? '5 5' : 'none'
-          },
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
-            color: sourceColors.color,
-          },
-          label: `START_TURN (${data.count})`,
-          labelStyle: { 
-            fill: '#374151', 
-            fontSize: 10,
-            fontWeight: 500
-          },
-          labelBgStyle: {
-            fill: '#F3F4F6',
-            fillOpacity: 0.8,
-            borderRadius: '4px'
-          }
-        });
-      } 
-      // If an agent is selected, show all event types for its connections
-      else if (source === selectedAgent || target === selectedAgent) {
-        data.eventTypes.forEach((count, type) => {
-          const offset = Array.from(data.eventTypes.keys()).indexOf(type) * 40;
-          const isLatestOfType = isLatest && type === 'START_TURN';
-          
-          edgeArray.push({
-            id: `${key}-${type}`,
+    // Create edges
+    const edgeArray: Edge[] = Array.from(connectionMap.entries())
+      .filter(([key]) => {
+        if (!selectedAgent) return true;
+        const [source, target] = key.split('-');
+        return source === selectedAgent || target === selectedAgent;
+      })
+      .flatMap(([key, data]) => {
+        const [source, target] = key.split('-');
+        const sourceAgent = agentMap.get(source);
+        const colors = sourceAgent ? colorPalette[sourceAgent.colorIndex] : colorPalette[0];
+        const isLatest = key === latestConnection;
+
+        if (!selectedAgent) {
+          // Show simplified view when no agent is selected
+          return [{
+            id: key,
             source,
             target,
-            animated: isLatestOfType,
-            type: 'smoothstep',
+            animated: isLatest,
             style: {
-              stroke: sourceColors.color,
-              strokeWidth: isLatestOfType ? 3 : 1 + Math.min(count / 2, 3),
-              strokeDasharray: isLatestOfType ? '5 5' : 'none',
-              transform: `translate(${offset}px, ${offset}px)`,
-              zIndex: isLatestOfType ? 1000 : 1
+              stroke: colors.color,
+              strokeWidth: isLatest ? 3 : 1 + Math.min(data.count / 2, 3)
             },
             markerEnd: {
               type: MarkerType.ArrowClosed,
-              color: sourceColors.color,
+              color: colors.color
+            }
+          }];
+        } else {
+          // Show detailed view when an agent is selected
+          return Array.from(data.eventTypes.entries()).map(([type, count], index) => ({
+            id: `${key}-${type}`,
+            source,
+            target,
+            animated: isLatest && index === 0,
+            style: {
+              stroke: colors.color,
+              strokeWidth: 1 + Math.min(count / 2, 3),
+              transform: `translateY(${index * 2}px)`
+            },
+            markerEnd: {
+              type: MarkerType.ArrowClosed,
+              color: colors.color
             },
             label: `${type} (${count})`,
-            labelStyle: { 
-              fill: '#374151', 
-              fontSize: 10,
-              fontWeight: isLatestOfType ? 600 : 500
-            },
-            labelBgStyle: {
-              fill: '#F3F4F6',
-              fillOpacity: 0.8,
-              borderRadius: '4px'
-            }
-          });
-        });
-      }
-    });
+            labelStyle: { fontSize: 10 },
+            labelBgStyle: { fill: '#F3F4F6' }
+          }));
+        }
+      });
 
-    setNodes(nodeArray);
-    setEdges(edgeArray);
+    return { nodes: nodeArray, edges: edgeArray };
   }, [logs, selectedAgent]);
 
   return (
     <div className="bg-white rounded-lg shadow-sm p-4" style={{ height: '80vh' }}>
       <ReactFlow 
-        nodes={nodes} 
-        edges={edges} 
+        nodes={nodes}
+        edges={edges}
         fitView
-        defaultEdgeOptions={{ 
-          type: 'smoothstep',
-          style: { strokeWidth: 2 }
-        }}
+        defaultEdgeOptions={defaultEdgeOptions}
       >
         <Background color="#E5E7EB" />
         <Controls />

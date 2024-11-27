@@ -1,9 +1,9 @@
 import React, { useEffect,useCallback  } from 'react';
-import { LayoutDashboard, ScrollText, Network, BarChart, Settings } from 'lucide-react';
+import { LayoutDashboard, ScrollText, Network, History, Settings } from 'lucide-react';
 import DashboardView from './views/DashboardView';
 import LogsView from './views/LogsView';
 import NetworkView from './views/NetworkView';
-import MetricsView from './views/MetricsView';
+import RunsView from './views/RunsView';
 import SettingsView from './views/SettingsView';
 import PlayPauseButton from './components/PlayPauseButton';
 import RefreshButton from './components/RefreshButton';
@@ -15,7 +15,7 @@ import { useRunStore } from './store/runStore';
 import { useSettingsStore } from './store/settingsStore';
 import type { Span, Log } from './types';
 
-type View = 'dashboard' | 'messageflow' | 'logs' | 'network' | 'metrics' | 'settings';
+type View = 'dashboard' | 'messageflow' | 'logs' | 'network' | 'runs' | 'settings';
 
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY = 1000;
@@ -138,7 +138,7 @@ function App() {
     dashboard: <DashboardView />,
     logs: <LogsView />,
     network: <NetworkView />,
-    metrics: <MetricsView />,
+    runs: <RunsView />,
     messageflow: <MessageFlow />,
     settings: <SettingsView />
   };
@@ -147,7 +147,7 @@ function App() {
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'logs', label: 'Logs', icon: ScrollText },
     { id: 'network', label: 'Network', icon: Network },
-    { id: 'metrics', label: 'Metrics', icon: BarChart },
+    { id: 'runs', label: 'Runs', icon: History },
     { id: 'messageflow', label: 'Message Flow', icon: ScrollText},
     { id: 'settings', label: 'Settings', icon: Settings }
   ];
