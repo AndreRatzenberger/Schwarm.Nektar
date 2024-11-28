@@ -14,12 +14,20 @@ interface SettingsState {
   setShowLogIndentation: (show: boolean) => void;
 }
 
+const getBackendUrl = () => {
+  const { protocol, hostname, port } = window.location;
+
+
+  // Production: Assume backend is hosted on the same domain
+  return `${protocol}//${hostname}:${port}`;
+};
+
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
-      endpointUrl: 'http://127.0.0.1:8123',
-      refreshInterval: 1000,
-      showRefreshButton: true,
+      endpointUrl: getBackendUrl(),
+      refreshInterval: 5000,
+      showRefreshButton: false,
       groupLogsByParent: true,
       showLogIndentation: true,
       setEndpointUrl: (url) => set({ endpointUrl: url }),
