@@ -4,6 +4,9 @@ import { Loader2, Radio } from 'lucide-react';
 import { Alert, AlertDescription } from './ui/alert';
 import { useSettingsStore } from '../store/settingsStore';
 import { usePauseStore } from '../store/pauseStore';
+import { useDataStore } from '../store/dataStore';
+import { useLogStore } from '../store/logStore';
+import { useRunStore } from '../store/runStore';
 import { cn } from '../lib/utils';
 
 interface StreamReaderHook {
@@ -18,21 +21,31 @@ interface StreamViewerProps {
   onMessageReceived?: (message: string) => void;
 }
 
+const RECONNECT_DELAY = 1000; // 1 second delay between reconnection attempts
+
 const useStreamReader = (streamUrl: string): StreamReaderHook => {
   const [messages, setMessages] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
+  const [reconnectTimeout, setReconnectTimeout] = useState<NodeJS.Timeout | null>(null);
 
   const stopStream = useCallback(() => {
     if (abortController) {
       abortController.abort();
       setAbortController(null);
     }
+    if (reconnectTimeout) {
+      clearTimeout(reconnectTimeout);
+      setReconnectTimeout(null);
+    }
     setIsLoading(false);
-  }, [abortController]);
+  }, [abortController, reconnectTimeout]);
 
   const startStream = useCallback(async () => {
+    // If already loading or reconnect timeout is active, don't start another stream
+    if (isLoading || reconnectTimeout) return;
+
     stopStream();
     const newController = new AbortController();
     setAbortController(newController);
@@ -46,10 +59,6 @@ const useStreamReader = (streamUrl: string): StreamReaderHook => {
         credentials: 'omit'
       });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
       if (!response.body) {
         throw new Error('ReadableStream not supported');
       }
@@ -61,6 +70,12 @@ const useStreamReader = (streamUrl: string): StreamReaderHook => {
         const { value, done } = await reader.read();
 
         if (done) {
+          // Stream ended normally, wait before reconnecting
+          const timeout = setTimeout(() => {
+            setReconnectTimeout(null);
+            startStream();
+          }, RECONNECT_DELAY);
+          setReconnectTimeout(timeout);
           break;
         }
 
@@ -72,12 +87,19 @@ const useStreamReader = (streamUrl: string): StreamReaderHook => {
         return;
       }
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-      setError(errorMessage);
+      setError(`Failed to connect to stream: ${errorMessage}`);
       console.error('Stream error:', err);
+      
+      // On error, wait before reconnecting
+      const timeout = setTimeout(() => {
+        setReconnectTimeout(null);
+        startStream();
+      }, RECONNECT_DELAY);
+      setReconnectTimeout(timeout);
     } finally {
       setIsLoading(false);
     }
-  }, [streamUrl, stopStream]);
+  }, [streamUrl, stopStream, isLoading, reconnectTimeout]);
 
   // Cleanup effect
   useEffect(() => {
@@ -97,18 +119,31 @@ const StreamViewer: React.FC<StreamViewerProps> = ({
 }) => {
   const { endpointUrl } = useSettingsStore();
   const { isPaused } = usePauseStore();
+  const { data } = useDataStore();
+  const logs = useLogStore(state => state.getFilteredLogs());
+  const activeRunId = useRunStore(state => state.activeRunId);
   const streamUrl = `${endpointUrl}/stream`;
   
   const { messages, error, isLoading, startStream, stopStream } = useStreamReader(streamUrl);
 
-  // Handle streaming based on pause state
+  // Handle streaming based on data availability
   useEffect(() => {
-    if (!isPaused) {
+    let mounted = true;
+
+    // Only start streaming if we have initial data, logs, and an active run
+    const shouldStream = mounted && data !== null && logs.length > 0 && activeRunId;
+    
+    if (shouldStream) {
       startStream();
     } else {
       stopStream();
     }
-  }, [isPaused, startStream, stopStream]);
+
+    return () => {
+      mounted = false;
+      stopStream();
+    };
+  }, [data, logs, activeRunId, startStream, stopStream]);
 
   // Handle message callback
   useEffect(() => {
@@ -116,6 +151,11 @@ const StreamViewer: React.FC<StreamViewerProps> = ({
       onMessageReceived(messages[messages.length - 1]);
     }
   }, [messages, onMessageReceived]);
+
+  // If paused or no data/logs yet, show nothing
+  if (isPaused || data === null || logs.length === 0 || !activeRunId) {
+    return null;
+  }
 
   return (
     <div className="w-full space-y-4 transition-all duration-200">
@@ -192,7 +232,7 @@ const StreamViewer: React.FC<StreamViewerProps> = ({
           {!isLoading && messages.length === 0 && (
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="text-gray-500 italic text-center">
-                {isPaused ? 'Stream paused' : 'No messages yet'}
+                No messages yet
               </div>
             </div>
           )}

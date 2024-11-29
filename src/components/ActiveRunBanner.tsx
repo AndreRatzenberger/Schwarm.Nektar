@@ -7,9 +7,48 @@ import { useDataStore } from '../store/dataStore';
 import PlayPauseButton from './PlayPauseButton';
 import RefreshButton from './RefreshButton';
 import { Loader2, AlertCircle } from 'lucide-react';
+import type { Log, Span } from '../types';
 
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY = 1000;
+
+function transformSpansToLogs(spans: Span[]): Log[] {
+  return spans.map((span) => {
+    const isStart = span.name === 'SCHWARM_START';
+
+    const [agent, activity] = span.name.split('-').map(str => str.trim());
+    const isEventType = activity && activity.includes("EventType.");
+    
+    const isError = span.status_code == 'ERROR';
+    const timestamp = new Date(Number(span.start_time) / 1_000_000).toISOString();
+    
+    let level: Log['level'] = 'LOG';
+    if (isError) {
+      level = 'ERROR';
+    } else if (isEventType) {
+      const eventType = activity.replace("EventType.", "");
+      if (eventType === 'START_TURN' || eventType === 'INSTRUCT' || 
+          eventType === 'MESSAGE_COMPLETION' || eventType === 'POST_MESSAGE_COMPLETION' || 
+          eventType === 'TOOL_EXECUTION' || eventType === 'POST_TOOL_EXECUTION' || 
+          eventType === 'HANDOFF') {
+        level = eventType;
+      } else {
+        level = 'INFO';
+      }
+    }
+    
+    return {
+      id: span.id,
+      timestamp,
+      parent_id: span.parent_span_id,
+      run_id: span.attributes['run_id'] as string,
+      level,
+      agent: isStart ? 'System' : agent,
+      message: isStart ? 'Agent Framework Started' : `Agent ${span.name} activity`,
+      attributes: span.attributes
+    };
+  });
+}
 
 export function ActiveRunBanner() {
   const activeRunId = useRunStore(state => state.activeRunId);
@@ -23,10 +62,10 @@ export function ActiveRunBanner() {
   const { findRunIdFromLogs, setActiveRunId } = useRunStore();
   const { endpointUrl, setIsLoading } = useSettingsStore();
   const [isConnected, setIsConnected] = useState(false);
+  const [lastSuccessfulFetch, setLastSuccessfulFetch] = useState<Date | null>(null);
 
   const fetchWithRetry = React.useCallback(async (retryCount = 0, delay = INITIAL_RETRY_DELAY) => {
     try {
-      console.log('Fetching data...', { endpointUrl });
       const url = new URL(`${endpointUrl}/spans`);
       const { latestId: currentLatestId } = useLogStore.getState();
 
@@ -44,22 +83,27 @@ export function ActiveRunBanner() {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        throw new Error(`Server returned ${response.status} ${response.statusText}`);
       }
       
       const jsonData = await response.json();
-      console.log('Received data:', jsonData);
       setIsConnected(true);
+      setLastSuccessfulFetch(new Date());
       
-      if (jsonData.length > 0) {
+      // Store raw spans in dataStore
+      setData(jsonData);
+      
+      // Transform spans to logs
+      const logs = transformSpansToLogs(jsonData);
+      
+      if (logs.length > 0) {
         if (currentLatestId) {
-          appendLogs(jsonData);
+          appendLogs(logs);
         } else {
-          setLogs(jsonData);
+          setLogs(logs);
         }
         
-        // Update active run ID when new logs arrive
-        const runId = findRunIdFromLogs(jsonData);
+        const runId = findRunIdFromLogs(logs);
         if (runId) {
           setActiveRunId(runId);
         }
@@ -71,37 +115,45 @@ export function ActiveRunBanner() {
       setIsConnected(false);
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch data';
       
-      if (errorMessage.includes('CORS') || errorMessage.includes('Failed to fetch')) {
-        setError(
-          'Unable to connect to the agent framework.\nPlease ensure the server is running at ' + endpointUrl
-        );
-      } else if (retryCount < MAX_RETRIES) {
+      if (retryCount < MAX_RETRIES) {
         setTimeout(() => {
           fetchWithRetry(retryCount + 1, delay * 2);
         }, delay);
         return;
-      } else {
-        setError(`${errorMessage}\nMax retries reached. Please check the endpoint configuration.`);
       }
+
+      let errorDetails = '';
+      if (errorMessage.includes('Failed to fetch')) {
+        errorDetails = `Unable to connect to ${endpointUrl}. Please ensure the server is running.`;
+      } else if (errorMessage.includes('CORS')) {
+        errorDetails = `CORS error: The server at ${endpointUrl} is not allowing connections from this origin.`;
+      } else {
+        errorDetails = `${errorMessage}. Please check your network connection and server status.`;
+      }
+      
+      setError(errorDetails);
       setIsLoading(false);
     }
   }, [endpointUrl, setData, setError, appendLogs, setLogs, findRunIdFromLogs, setActiveRunId, setIsLoading]);
 
   // Initial fetch on mount
   useEffect(() => {
-    console.log('Initial fetch effect running');
     setIsLoading(true);
     fetchWithRetry();
   }, [fetchWithRetry, setIsLoading]);
 
   // Set up refresh interval
   useEffect(() => {
-    console.log('Setting up refresh interval:', refreshInterval);
-    if (!refreshInterval) return;
+    if (!refreshInterval || isPaused) return;
 
-    const intervalId = setInterval(() => fetchWithRetry(), refreshInterval);
+    const intervalId = setInterval(() => {
+      if (!isLoading) {
+        fetchWithRetry();
+      }
+    }, refreshInterval);
+    
     return () => clearInterval(intervalId);
-  }, [fetchWithRetry, refreshInterval]);
+  }, [fetchWithRetry, refreshInterval, isLoading, isPaused]);
 
   return (
     <div className="bg-gray-100 border-b border-gray-200 px-4 py-2">
@@ -114,7 +166,7 @@ export function ActiveRunBanner() {
         ) : !isConnected ? (
           <div className="flex items-center text-red-600">
             <AlertCircle className="h-5 w-5 mr-2" />
-            <p className="text-sm">Disconnected - {error || `Unable to connect to ${endpointUrl}`}</p>
+            <p className="text-sm">{error || `Unable to connect to ${endpointUrl}`}</p>
             <button 
               onClick={() => fetchWithRetry()} 
               className="ml-4 px-2 py-1 text-sm bg-red-100 hover:bg-red-200 rounded-md transition-colors"
@@ -132,8 +184,13 @@ export function ActiveRunBanner() {
 
             <div className="flex items-center space-x-2">
               <span className="text-sm text-gray-600">
-                State: <span className="font-medium">{isPaused ? 'Paused' : 'Running'}</span>
+                Status: {isPaused ? 'Paused' : 'Running'}
               </span>
+              {lastSuccessfulFetch && (
+                <span className="text-xs text-gray-500">
+                  (Last update: {lastSuccessfulFetch.toLocaleTimeString()})
+                </span>
+              )}
             </div>
 
             {latestId && (

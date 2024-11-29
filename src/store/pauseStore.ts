@@ -3,6 +3,7 @@ import { useSettingsStore } from './settingsStore'
 
 interface PauseState {
   isPaused: boolean
+  error: string | null
   setIsPaused: (isBreak: boolean) => void
   fetchPauseState: () => Promise<void>
   togglePause: () => Promise<void>
@@ -11,6 +12,7 @@ interface PauseState {
 
 export const usePauseStore = create<PauseState>((set, get) => ({
   isPaused: false,
+  error: null,
   setIsPaused: (isPaused) => set({ isPaused: isPaused }),
   fetchPauseState: async () => {
     const { endpointUrl } = useSettingsStore.getState()
@@ -24,14 +26,19 @@ export const usePauseStore = create<PauseState>((set, get) => ({
         credentials: 'omit'
       })
       
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-      
       const isPause = await response.json()
-      set({ isPaused: isPause })
+      
+      // Even if response.ok is false, if we got valid data, use it
+      if (typeof isPause === 'boolean') {
+        set({ isPaused: isPause, error: null })
+      } else {
+        throw new Error('Invalid pause state received')
+      }
     } catch (error) {
-      console.error('Failed to fetch pause state:', error)
+      // Don't update pause state on error, just log it
+      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch pause state'
+      console.warn('Pause state fetch warning:', errorMessage)
+      set({ error: errorMessage })
     }
   },
   togglePause: async () => {
@@ -47,15 +54,23 @@ export const usePauseStore = create<PauseState>((set, get) => ({
         credentials: 'omit'
       })
       
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
+      const result = await response.json()
       
-      // After successful toggle, fetch the current state
-      await get().fetchPauseState()
+      // If we got a valid boolean response, use it directly instead of fetching again
+      if (typeof result === 'boolean') {
+        set({ isPaused: result, error: null })
+      } else {
+        // If response is not what we expect, fetch the current state
+        await get().fetchPauseState()
+      }
     } catch (error) {
-      console.error('Failed to toggle break state:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Failed to toggle pause state'
+      console.warn('Pause toggle warning:', errorMessage)
+      set({ error: errorMessage })
+      
+      // On error, fetch current state to ensure UI is in sync
+      await get().fetchPauseState()
     }
   },
-  reset: () => set({ isPaused: false })
+  reset: () => set({ isPaused: false, error: null })
 }));
