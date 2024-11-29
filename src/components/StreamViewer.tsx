@@ -21,31 +21,24 @@ interface StreamViewerProps {
   onMessageReceived?: (message: string) => void;
 }
 
-const RECONNECT_DELAY = 1000; // 1 second delay between reconnection attempts
-
 const useStreamReader = (streamUrl: string): StreamReaderHook => {
   const [messages, setMessages] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
-  const [reconnectTimeout, setReconnectTimeout] = useState<NodeJS.Timeout | null>(null);
 
   const stopStream = useCallback(() => {
     if (abortController) {
       abortController.abort();
       setAbortController(null);
     }
-    if (reconnectTimeout) {
-      clearTimeout(reconnectTimeout);
-      setReconnectTimeout(null);
-    }
     setIsLoading(false);
-  }, [abortController, reconnectTimeout]);
+  }, [abortController]);
 
   const startStream = useCallback(async () => {
-    // If already loading or reconnect timeout is active, don't start another stream
-    if (isLoading || reconnectTimeout) return;
+    if (isLoading) return;
 
+    console.log('Starting stream connection');
     stopStream();
     const newController = new AbortController();
     setAbortController(newController);
@@ -68,17 +61,7 @@ const useStreamReader = (streamUrl: string): StreamReaderHook => {
 
       while (true) {
         const { value, done } = await reader.read();
-
-        if (done) {
-          // Stream ended normally, wait before reconnecting
-          const timeout = setTimeout(() => {
-            setReconnectTimeout(null);
-            startStream();
-          }, RECONNECT_DELAY);
-          setReconnectTimeout(timeout);
-          break;
-        }
-
+        if (done) break;
         const chunk = decoder.decode(value, { stream: true });
         setMessages(prev => [...prev, chunk]);
       }
@@ -89,17 +72,10 @@ const useStreamReader = (streamUrl: string): StreamReaderHook => {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
       setError(`Failed to connect to stream: ${errorMessage}`);
       console.error('Stream error:', err);
-      
-      // On error, wait before reconnecting
-      const timeout = setTimeout(() => {
-        setReconnectTimeout(null);
-        startStream();
-      }, RECONNECT_DELAY);
-      setReconnectTimeout(timeout);
     } finally {
       setIsLoading(false);
     }
-  }, [streamUrl, stopStream, isLoading, reconnectTimeout]);
+  }, [streamUrl, stopStream, isLoading]);
 
   // Cleanup effect
   useEffect(() => {
@@ -124,26 +100,41 @@ const StreamViewer: React.FC<StreamViewerProps> = ({
   const activeRunId = useRunStore(state => state.activeRunId);
   const streamUrl = `${endpointUrl}/stream`;
   
+  const [hasAttemptedInitialConnection, setHasAttemptedInitialConnection] = useState(false);
+  const [previousPauseState, setPreviousPauseState] = useState(isPaused);
+  
   const { messages, error, isLoading, startStream, stopStream } = useStreamReader(streamUrl);
 
-  // Handle streaming based on data availability
+  // Handle initial connection and pause/resume
   useEffect(() => {
-    let mounted = true;
+    const shouldStream = data !== null && logs.length > 0 && activeRunId;
+    const isResumingFromPause = previousPauseState && !isPaused;
 
-    // Only start streaming if we have initial data, logs, and an active run
-    const shouldStream = mounted && data !== null && logs.length > 0 && activeRunId;
-    
     if (shouldStream) {
-      startStream();
-    } else {
+      if (!hasAttemptedInitialConnection) {
+        // Initial connection attempt
+        console.log('Making initial stream connection');
+        startStream();
+        setHasAttemptedInitialConnection(true);
+      } else if (isResumingFromPause) {
+        // Retry connection when transitioning from paused to running
+        console.log('Resuming stream after pause');
+        startStream();
+      }
+    }
+
+    // Update previous pause state
+    setPreviousPauseState(isPaused);
+
+    // Stop stream if paused
+    if (isPaused) {
       stopStream();
     }
 
     return () => {
-      mounted = false;
       stopStream();
     };
-  }, [data, logs, activeRunId, startStream, stopStream]);
+  }, [isPaused, data, logs, activeRunId, hasAttemptedInitialConnection, startStream, stopStream]);
 
   // Handle message callback
   useEffect(() => {

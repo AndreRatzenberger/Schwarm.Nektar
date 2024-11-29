@@ -157,7 +157,7 @@ export function ActiveRunBanner() {
 
   return (
     <div className="bg-gray-100 border-b border-gray-200 px-4 py-2">
-      <div className="max-w-7xl mx-auto flex items-center space-x-4">
+      <div className="max-w-7xl mx-auto flex items-center justify-between">
         {isLoading ? (
           <div className="flex items-center">
             <Loader2 className="h-5 w-5 animate-spin mr-2" />
@@ -176,38 +176,44 @@ export function ActiveRunBanner() {
           </div>
         ) : (
           <>
-            <PlayPauseButton />
-            
-            {showRefreshButton && (
-              <RefreshButton onRefresh={fetchWithRetry} />
-            )}
-
-            <div className="flex items-center space-x-2">
-              <span className="text-sm text-gray-600">
-                Status: {isPaused ? 'Paused' : 'Running'}
-              </span>
-              {lastSuccessfulFetch && (
-                <span className="text-xs text-gray-500">
-                  (Last update: {lastSuccessfulFetch.toLocaleTimeString()})
-                </span>
+            <div className="flex items-center space-x-4">
+              <PlayPauseButton />
+              
+              {showRefreshButton && (
+                <RefreshButton onRefresh={fetchWithRetry} />
               )}
+
+              <div className="flex items-center space-x-2">
+                <span className="text-sm">
+                  Status: <span className={`font-medium ${isPaused ? 'text-yellow-600' : 'text-green-600'}`}>
+                    {isPaused ? 'Paused' : 'Running'}
+                  </span>
+                </span>
+                {lastSuccessfulFetch && (
+                  <span className="text-xs text-gray-500">
+                    (Last update: {lastSuccessfulFetch.toLocaleTimeString()})
+                  </span>
+                )}
+              </div>
             </div>
 
-            {latestId && (
-              <div className="flex items-center space-x-2">
-                <span className="text-sm text-gray-600">
-                  Current Log: <span className="font-mono font-medium">{latestId}</span>
-                </span>
-              </div>
-            )}
+            <div className="flex items-center space-x-6">
+              {latestId && (
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm text-gray-600">
+                    Current Log: <span className="font-mono font-medium">{latestId}</span>
+                  </span>
+                </div>
+              )}
 
-            {activeRunId && (
-              <div className="flex items-center space-x-2">
-                <span className="text-sm text-gray-600">
-                  Run ID: <span className="font-mono font-medium">{activeRunId}</span>
-                </span>
-              </div>
-            )}
+              {activeRunId && (
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm text-gray-600">
+                    Run ID: <span className="font-mono font-medium">{activeRunId}</span>
+                  </span>
+                </div>
+              )}
+            </div>
           </>
         )}
       </div>
