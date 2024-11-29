@@ -6,7 +6,6 @@ import NetworkView from './views/NetworkView';
 import RunsView from './views/RunsView';
 import SettingsView from './views/SettingsView';
 
-import PlayPauseButton from './components/PlayPauseButton';
 import RefreshButton from './components/RefreshButton';
 import MessageFlow from './components/message-flow';
 import { ActiveRunBanner } from './components/ActiveRunBanner';
@@ -15,6 +14,7 @@ import { useLogStore } from './store/logStore';
 import { useRunStore } from './store/runStore';
 import { useSettingsStore } from './store/settingsStore';
 import type { Span, Log } from './types';
+import { cn } from './lib/utils';
 
 type View = 'dashboard' | 'messageflow' | 'logs' | 'network' | 'runs' | 'settings';
 
@@ -64,7 +64,7 @@ function App() {
   const { setData, setError } = useDataStore();
   const { appendLogs, setLogs } = useLogStore();
   const { findRunIdFromLogs, setActiveRunId } = useRunStore();
-  const { endpointUrl, refreshInterval, showRefreshButton } = useSettingsStore();
+  const { endpointUrl, refreshInterval, showRefreshButton, setIsLoading } = useSettingsStore();
 
   const fetchWithRetry = useCallback(async (retryCount = 0, delay = INITIAL_RETRY_DELAY) => {
     try {
@@ -105,6 +105,7 @@ function App() {
         }
       }
       setError(null);
+      setIsLoading(false);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch data';
       
@@ -123,8 +124,9 @@ function App() {
       } else {
         setError(`${errorMessage}\nMax retries reached. Please check the endpoint configuration.`);
       }
+      setIsLoading(false);
     }
-  }, [endpointUrl, setData, setError, appendLogs, setLogs, findRunIdFromLogs, setActiveRunId]);
+  }, [endpointUrl, setData, setError, appendLogs, setLogs, findRunIdFromLogs, setActiveRunId, setIsLoading]);
 
   useEffect(() => {
     fetchWithRetry();
@@ -168,20 +170,23 @@ function App() {
                   <button
                     key={id}
                     onClick={() => setCurrentView(id as View)}
-                    className={`${
+                    className={cn(
+                      "inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors duration-200",
                       currentView === id
-                        ? 'border-indigo-500 text-gray-900'
-                        : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
-                    } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                        ? "border-indigo-500 text-gray-900 bg-indigo-50"
+                        : "border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 hover:bg-gray-50"
+                    )}
                   >
-                    <Icon className="h-4 w-4 mr-2" />
+                    <Icon className={cn(
+                      "h-4 w-4 mr-2 transition-colors duration-200",
+                      currentView === id
+                        ? "text-indigo-600"
+                        : "text-gray-400 group-hover:text-gray-500"
+                    )} />
                     {label}
                   </button>
                 ))}
               </div>
-            </div>
-            <div className="flex items-center">
-              <PlayPauseButton />
             </div>
             {showRefreshButton && (
               <div className="flex items-center">

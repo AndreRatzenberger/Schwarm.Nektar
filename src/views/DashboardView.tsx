@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useEffect, useState } from 'react';
-import { Info, Clock, Cpu, DollarSign } from 'lucide-react';
+import { Info, Clock, Cpu, DollarSign, TrendingUp, TrendingDown } from 'lucide-react';
 import { useLogStore } from '../store/logStore';
-import { useRunStore, activeRunId } from '../store/runStore';
+import { useRunStore } from '../store/runStore';
 import CompactNetworkView from '../components/CompactNetworkView';
 import CompactMessageFlow from '../components/CompactMessageFlow';
 import StreamViewer from '../components/StreamViewer';
@@ -13,11 +13,21 @@ function DashboardView() {
   const activeRunId = useRunStore(state => state.activeRunId);
   const logs = getFilteredLogs();
   const [tokenUsage, setTokenUsage] = useState(0);
+  const [prevTokenUsage, setPrevTokenUsage] = useState(0);
   const [costSpent, setCostSpent] = useState(0);
+  const [prevCostSpent, setPrevCostSpent] = useState(0);
   const [activeAgents, setActiveAgents] = useState(0);
+  const [prevActiveAgents, setPrevActiveAgents] = useState(0);
   const [eventsToday, setEventsTotal] = useState(0);
+  const [prevEventsToday, setPrevEventsTotal] = useState(0);
 
   useEffect(() => {
+    // Store previous values before updating
+    setPrevTokenUsage(tokenUsage);
+    setPrevCostSpent(costSpent);
+    setPrevActiveAgents(activeAgents);
+    setPrevEventsTotal(eventsToday);
+
     // Calculate token usage and cost from START_TURN logs
     let maxTokens = 0;
     let maxCost = 0;
@@ -46,7 +56,20 @@ function DashboardView() {
     setCostSpent(maxCost);
     setActiveAgents(seenAgents.size);
     setEventsTotal(totalEvents);
-  }, [costSpent, logs, tokenUsage]);
+  }, [logs, activeRunId]);
+
+  const TrendIndicator = ({ current, previous }: { current: number, previous: number }) => {
+    if (current === previous) return null;
+    const isUp = current > previous;
+    const Icon = isUp ? TrendingUp : TrendingDown;
+    const colorClass = isUp ? 'text-green-500' : 'text-red-500';
+    
+    return (
+      <div className={`flex items-center ${colorClass} text-sm ml-2`}>
+        <Icon className="h-4 w-4" />
+      </div>
+    );
+  };
 
   const handleMessage = (message: string) => {
     console.log('New message received:', message);
@@ -59,36 +82,48 @@ function DashboardView() {
         <Card className="bg-white p-6 rounded-lg shadow-sm">
           <div className="flex items-center">
             <Cpu className="h-8 w-8 text-indigo-600" />
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Active Agents</p>
-              <p className="text-2xl font-semibold text-gray-900">{activeAgents}</p>
+            <div className="ml-4 flex items-center">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Active Agents</p>
+                <p className="text-2xl font-semibold text-gray-900">{activeAgents}</p>
+              </div>
+              <TrendIndicator current={activeAgents} previous={prevActiveAgents} />
             </div>
           </div>
         </Card>
         <Card className="bg-white p-6 rounded-lg shadow-sm">
           <div className="flex items-center">
             <Clock className="h-8 w-8 text-indigo-600" />
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Events Today</p>
-              <p className="text-2xl font-semibold text-gray-900">{eventsToday}</p>
+            <div className="ml-4 flex items-center">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Events Today</p>
+                <p className="text-2xl font-semibold text-gray-900">{eventsToday}</p>
+              </div>
+              <TrendIndicator current={eventsToday} previous={prevEventsToday} />
             </div>
           </div>
         </Card>
         <Card className="bg-white p-6 rounded-lg shadow-sm">
           <div className="flex items-center">
             <DollarSign className="h-8 w-8 text-indigo-600" />
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Token Usage</p>
-              <p className="text-2xl font-semibold text-gray-900">{tokenUsage}</p>
+            <div className="ml-4 flex items-center">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Token Usage</p>
+                <p className="text-2xl font-semibold text-gray-900">{tokenUsage}</p>
+              </div>
+              <TrendIndicator current={tokenUsage} previous={prevTokenUsage} />
             </div>
           </div>
         </Card>
         <Card className="bg-white p-6 rounded-lg shadow-sm">
           <div className="flex items-center">
             <DollarSign className="h-8 w-8 text-indigo-600" />
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Cost Spent</p>
-              <p className="text-2xl font-semibold text-gray-900">${costSpent.toFixed(4)}</p>
+            <div className="ml-4 flex items-center">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Cost Spent</p>
+                <p className="text-2xl font-semibold text-gray-900">${costSpent.toFixed(4)}</p>
+              </div>
+              <TrendIndicator current={costSpent} previous={prevCostSpent} />
             </div>
           </div>
         </Card>
@@ -113,13 +148,7 @@ function DashboardView() {
             Message streams
           </h2>
 
-          <StreamViewer
-            url="http://localhost:8123/stream"
-            onMessageReceived={handleMessage}
-            autoStart={false}
-          />
-
-
+          <StreamViewer onMessageReceived={handleMessage} />
         </div>
       </Card>
     </div>

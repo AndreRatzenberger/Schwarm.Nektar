@@ -87,14 +87,25 @@ export default function LogsView() {
   const [activeFilters, setActiveFilters] = useState<Set<LogLevel>>(new Set())
   const [filteredLogs, setFilteredLogs] = useState<Log[]>([])
   const getFilteredLogs = useLogStore(state => state.getFilteredLogs)
-  const { groupLogsByParent, showLogIndentation } = useSettingsStore()
+  const { groupLogsByParent, showLogIndentation, refreshInterval } = useSettingsStore()
 
-  // Update filtered logs when filters change
+  // Update filtered logs when filters change or when refreshInterval triggers
   useEffect(() => {
-    const logs = getFilteredLogs()
-    const filtered = logs.filter(filterLogs).sort(sortLogs)
-    setFilteredLogs(filtered)
-  }, [getFilteredLogs, searchTerm, activeFilters, sortField, sortDirection])
+    const updateLogs = () => {
+      const logs = getFilteredLogs()
+      const filtered = logs.filter(filterLogs).sort(sortLogs)
+      setFilteredLogs(filtered)
+    }
+
+    // Initial update
+    updateLogs()
+
+    // Set up interval if refreshInterval is set
+    if (refreshInterval) {
+      const intervalId = setInterval(updateLogs, refreshInterval)
+      return () => clearInterval(intervalId)
+    }
+  }, [getFilteredLogs, searchTerm, activeFilters, sortField, sortDirection, refreshInterval])
 
   // Handle new log highlighting
   useEffect(() => {
@@ -134,13 +145,18 @@ export default function LogsView() {
 
   const sortLogs = (a: Log, b: Log) => {
     let comparison = 0
+    
+    // Move variable declarations outside switch statement
+    const aTurn = String(a.attributes['current_turn'] || '')
+    const bTurn = String(b.attributes['current_turn'] || '')
+
     switch (sortField) {
       case 'timestamp':
         comparison = new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
         break
       case 'current_turn':
-          comparison = (a.attributes['current_turn'] || '').localeCompare(b.attributes['current_turn'] || '')
-          break
+        comparison = aTurn.localeCompare(bTurn)
+        break
       case 'level':
         comparison = (a.level || '').localeCompare(b.level || '')
         break
@@ -294,7 +310,7 @@ export default function LogsView() {
                           ${expandedLogId === log.id ? 'rotate-180' : ''}`} />
                       </div>
                     </TableCell>
-                    <TableCell>{log.attributes['current_turn'] as string}</TableCell>
+                    <TableCell>{String(log.attributes['current_turn'] || '')}</TableCell>
                     <TableCell className="font-medium">{log.agent}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className={`${getLogColors(log.level).bg} ${getLogColors(log.level).text}`}>
