@@ -1,12 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Loader2, Radio } from 'lucide-react';
 import { Alert, AlertDescription } from './ui/alert';
 import { useSettingsStore } from '../store/settingsStore';
 import { usePauseStore } from '../store/pauseStore';
-import { useDataStore } from '../store/dataStore';
-import { useLogStore } from '../store/logStore';
-import { useRunStore } from '../store/runStore';
 import { cn } from '../lib/utils';
 
 interface StreamReaderHook {
@@ -25,59 +22,89 @@ const useStreamReader = (streamUrl: string): StreamReaderHook => {
   const [messages, setMessages] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [abortController, setAbortController] = useState<AbortController | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const readerRef = useRef<ReadableStreamDefaultReader | null>(null);
 
   const stopStream = useCallback(() => {
-    if (abortController) {
-      abortController.abort();
-      setAbortController(null);
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    if (readerRef.current) {
+      readerRef.current.cancel();
+      readerRef.current = null;
     }
     setIsLoading(false);
-  }, [abortController]);
+  }, []);
 
   const startStream = useCallback(async () => {
-    if (isLoading) return;
-
-    console.log('Starting stream connection');
+    // Stop any existing stream
     stopStream();
-    const newController = new AbortController();
-    setAbortController(newController);
+
+    // Create new abort controller
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    
     setIsLoading(true);
     setError(null);
 
     try {
       const response = await fetch(streamUrl, {
-        signal: newController.signal,
+        signal: controller.signal,
         mode: 'cors',
-        credentials: 'omit'
+        credentials: 'omit',
+        headers: {
+          'Accept': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+        },
       });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
 
       if (!response.body) {
         throw new Error('ReadableStream not supported');
       }
 
       const reader = response.body.getReader();
+      readerRef.current = reader;
       const decoder = new TextDecoder();
 
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        setMessages(prev => [...prev, chunk]);
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          if (chunk.trim()) { // Only add non-empty chunks
+            setMessages(prev => [...prev, chunk]);
+          }
+        }
+      } catch (readError) {
+        if (readError instanceof Error && readError.name === 'AbortError') {
+          return; // Silent abort
+        }
+        throw readError; // Re-throw other errors
       }
-    } catch (err: unknown) {
+    } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {
-        return;
+        return; // Silent abort
       }
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-      setError(`Failed to connect to stream: ${errorMessage}`);
+      setError(errorMessage);
       console.error('Stream error:', err);
     } finally {
-      setIsLoading(false);
+      if (!abortControllerRef.current) {
+        // Only clean up if we weren't aborted (avoid race conditions)
+        readerRef.current = null;
+        setIsLoading(false);
+      }
     }
-  }, [streamUrl, stopStream, isLoading]);
+  }, [streamUrl, stopStream]);
 
-  // Cleanup effect
+  // Cleanup on unmount or URL change
   useEffect(() => {
     return () => {
       stopStream();
@@ -85,7 +112,7 @@ const useStreamReader = (streamUrl: string): StreamReaderHook => {
       setError(null);
       setIsLoading(false);
     };
-  }, [stopStream]);
+  }, [stopStream, streamUrl]);
 
   return { messages, error, isLoading, startStream, stopStream };
 };
@@ -95,58 +122,28 @@ const StreamViewer: React.FC<StreamViewerProps> = ({
 }) => {
   const { endpointUrl } = useSettingsStore();
   const { isPaused } = usePauseStore();
-  const { data } = useDataStore();
-  const logs = useLogStore(state => state.getFilteredLogs());
-  const activeRunId = useRunStore(state => state.activeRunId);
   const streamUrl = `${endpointUrl}/stream`;
-  
-  const [hasAttemptedInitialConnection, setHasAttemptedInitialConnection] = useState(false);
-  const [previousPauseState, setPreviousPauseState] = useState(isPaused);
   
   const { messages, error, isLoading, startStream, stopStream } = useStreamReader(streamUrl);
 
-  // Handle initial connection and pause/resume
+  // Handle streaming based on pause state
   useEffect(() => {
-    const shouldStream = data !== null && logs.length > 0 && activeRunId;
-    const isResumingFromPause = previousPauseState && !isPaused;
-
-    if (shouldStream) {
-      if (!hasAttemptedInitialConnection) {
-        // Initial connection attempt
-        console.log('Making initial stream connection');
-        startStream();
-        setHasAttemptedInitialConnection(true);
-      } else if (isResumingFromPause) {
-        // Retry connection when transitioning from paused to running
-        console.log('Resuming stream after pause');
-        startStream();
-      }
-    }
-
-    // Update previous pause state
-    setPreviousPauseState(isPaused);
-
-    // Stop stream if paused
-    if (isPaused) {
+    if (!isPaused) {
+      startStream();
+    } else {
       stopStream();
     }
-
-    return () => {
-      stopStream();
-    };
-  }, [isPaused, data, logs, activeRunId, hasAttemptedInitialConnection, startStream, stopStream]);
+    // We only want to re-run this when isPaused changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPaused]);
 
   // Handle message callback
   useEffect(() => {
-    if (messages.length > 0 && onMessageReceived) {
-      onMessageReceived(messages[messages.length - 1]);
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage && onMessageReceived) {
+      onMessageReceived(lastMessage);
     }
   }, [messages, onMessageReceived]);
-
-  // If paused or no data/logs yet, show nothing
-  if (isPaused || data === null || logs.length === 0 || !activeRunId) {
-    return null;
-  }
 
   return (
     <div className="w-full space-y-4 transition-all duration-200">
@@ -192,8 +189,8 @@ const StreamViewer: React.FC<StreamViewerProps> = ({
                   ul: ({ ...props }) => <ul className="list-disc pl-4 mb-2" {...props} />,
                   ol: ({ ...props }) => <ol className="list-decimal pl-4 mb-2" {...props} />,
                   li: ({ ...props }) => <li className="mb-1" {...props} />,
-                  code: ({ node, ...props }) =>
-                    node ? (
+                  code: ({ inline, ...props }) => 
+                    inline ? (
                       <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-sm" {...props} />
                     ) : (
                       <code className="block bg-gray-100 dark:bg-gray-800 p-2 rounded text-sm overflow-x-auto" {...props} />
@@ -223,7 +220,7 @@ const StreamViewer: React.FC<StreamViewerProps> = ({
           {!isLoading && messages.length === 0 && (
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="text-gray-500 italic text-center">
-                No messages yet
+                {isPaused ? 'Stream paused' : 'No messages yet'}
               </div>
             </div>
           )}
