@@ -7,7 +7,7 @@ import { usePauseStore } from '../store/pauseStore';
 import { cn } from '../lib/utils';
 
 interface StreamReaderHook {
-  messages: string[];
+  currentText: string;
   error: string | null;
   isLoading: boolean;
   startStream: () => Promise<void>;
@@ -19,7 +19,7 @@ interface StreamViewerProps {
 }
 
 const useStreamReader = (streamUrl: string): StreamReaderHook => {
-  const [messages, setMessages] = useState<string[]>([]);
+  const [currentText, setCurrentText] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -38,10 +38,9 @@ const useStreamReader = (streamUrl: string): StreamReaderHook => {
   }, []);
 
   const startStream = useCallback(async () => {
-    // Stop any existing stream
     stopStream();
-
-    // Create new abort controller
+    setCurrentText('');
+    
     const controller = new AbortController();
     abortControllerRef.current = controller;
     
@@ -78,43 +77,41 @@ const useStreamReader = (streamUrl: string): StreamReaderHook => {
           if (done) break;
 
           const chunk = decoder.decode(value, { stream: true });
-          if (chunk.trim()) { // Only add non-empty chunks
-            setMessages(prev => [...prev, chunk]);
+          if (chunk) {
+            setCurrentText(prev => prev + chunk);
           }
         }
       } catch (readError) {
         if (readError instanceof Error && readError.name === 'AbortError') {
-          return; // Silent abort
+          return;
         }
-        throw readError; // Re-throw other errors
+        throw readError;
       }
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {
-        return; // Silent abort
+        return;
       }
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
       setError(errorMessage);
       console.error('Stream error:', err);
     } finally {
       if (!abortControllerRef.current) {
-        // Only clean up if we weren't aborted (avoid race conditions)
         readerRef.current = null;
         setIsLoading(false);
       }
     }
   }, [streamUrl, stopStream]);
 
-  // Cleanup on unmount or URL change
   useEffect(() => {
     return () => {
       stopStream();
-      setMessages([]);
+      setCurrentText('');
       setError(null);
       setIsLoading(false);
     };
   }, [stopStream, streamUrl]);
 
-  return { messages, error, isLoading, startStream, stopStream };
+  return { currentText, error, isLoading, startStream, stopStream };
 };
 
 const StreamViewer: React.FC<StreamViewerProps> = ({
@@ -124,7 +121,7 @@ const StreamViewer: React.FC<StreamViewerProps> = ({
   const { isPaused } = usePauseStore();
   const streamUrl = `${endpointUrl}/stream`;
   
-  const { messages, error, isLoading, startStream, stopStream } = useStreamReader(streamUrl);
+  const { currentText, error, isLoading, startStream, stopStream } = useStreamReader(streamUrl);
 
   // Handle streaming based on pause state
   useEffect(() => {
@@ -133,17 +130,15 @@ const StreamViewer: React.FC<StreamViewerProps> = ({
     } else {
       stopStream();
     }
-    // We only want to re-run this when isPaused changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPaused]);
 
-  // Handle message callback
+  // Handle message callback for any new content
   useEffect(() => {
-    const lastMessage = messages[messages.length - 1];
-    if (lastMessage && onMessageReceived) {
-      onMessageReceived(lastMessage);
+    if (onMessageReceived && currentText) {
+      onMessageReceived(currentText);
     }
-  }, [messages, onMessageReceived]);
+  }, [currentText, onMessageReceived]);
 
   return (
     <div className="w-full space-y-4 transition-all duration-200">
@@ -170,17 +165,13 @@ const StreamViewer: React.FC<StreamViewerProps> = ({
               </div>
             )}
           </div>
-          <div className="text-sm text-gray-500">
-            {messages.length} messages
-          </div>
         </div>
 
         <div className="p-4 min-h-[200px] relative">
           <div className="prose prose-sm max-w-none dark:prose-invert">
-            {messages.map((msg, idx) => (
+            {currentText && (
               <ReactMarkdown
-                key={idx}
-                className="break-words animate-in fade-in-50"
+                className="break-words"
                 components={{
                   h1: ({ ...props }) => <h1 className="text-2xl font-bold mt-4 mb-2" {...props} />,
                   h2: ({ ...props }) => <h2 className="text-xl font-bold mt-3 mb-2" {...props} />,
@@ -203,24 +194,24 @@ const StreamViewer: React.FC<StreamViewerProps> = ({
                   ),
                 }}
               >
-                {msg}
+                {currentText}
               </ReactMarkdown>
-            ))}
+            )}
           </div>
 
-          {isLoading && messages.length === 0 && (
+          {isLoading && !currentText && (
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="flex flex-col items-center space-y-2">
                 <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
-                <span className="text-sm text-gray-500">Waiting for messages...</span>
+                <span className="text-sm text-gray-500">Waiting for data...</span>
               </div>
             </div>
           )}
 
-          {!isLoading && messages.length === 0 && (
+          {!isLoading && !currentText && (
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="text-gray-500 italic text-center">
-                {isPaused ? 'Stream paused' : 'No messages yet'}
+                {isPaused ? 'Stream paused' : 'No data yet'}
               </div>
             </div>
           )}
