@@ -19,3 +19,28 @@ export interface Span {
   attributes: Record<string, unknown>;
   [key: string]: unknown;
 }
+
+
+
+export interface StreamViewerProps {
+  url?: string;
+  onMessageReceived?: (message: string) => void;
+  autoStart?: boolean;
+}
+
+
+export interface StreamMessage {
+  type: 'content' | 'error' | 'end' | 'metadata';
+  content: string;
+  timestamp: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface StreamReaderHook {
+  messages: StreamMessage[];
+  error: string | null;
+  isLoading: boolean;
+  startStream: () => Promise<void>;
+  stopStream: () => void;
+  clearMessages: () => void;
+}

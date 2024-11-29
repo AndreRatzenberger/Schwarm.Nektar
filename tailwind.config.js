@@ -7,6 +7,21 @@ export default {
   ],
   theme: {
   	extend: {
+		typography: {
+			DEFAULT: {
+			  css: {
+				maxWidth: 'none',
+				color: '#333',
+				a: {
+				  color: '#3182ce',
+				  '&:hover': {
+					color: '#2c5282',
+				  },
+				},
+			  },
+			},
+		  },
+		},
   		keyframes: {
   			highlight: {
   				'0%': {
@@ -69,5 +84,5 @@ export default {
   		}
   	}
   },
-  plugins: [require("tailwindcss-animate")],
+  plugins: [require('@tailwindcss/typography'),require("tailwindcss-animate")],
 }
