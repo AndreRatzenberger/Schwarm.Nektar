@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Loader2, Radio } from 'lucide-react';
 import { Alert, AlertDescription } from './ui/alert';
@@ -6,12 +6,9 @@ import { useSettingsStore } from '../store/settingsStore';
 import { usePauseStore } from '../store/pauseStore';
 import { cn } from '../lib/utils';
 
-interface StreamReaderHook {
-  currentText: string;
-  error: string | null;
-  isLoading: boolean;
-  startStream: () => Promise<void>;
-  stopStream: () => void;
+interface StreamMessage {
+  type: 'default' | 'tool' | 'close';
+  content: string | null;
 }
 
 interface StreamViewerProps {
@@ -23,103 +20,73 @@ interface CodeProps {
   children?: React.ReactNode;
 }
 
-const useStreamReader = (streamUrl: string): StreamReaderHook => {
-  const [currentText, setCurrentText] = useState<string>('');
+const useWebSocket = (url: string) => {
+  const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const readerRef = useRef<ReadableStreamDefaultReader | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const wsRef = useRef<WebSocket | null>(null);
+  const { isPaused } = usePauseStore();
 
-  const stopStream = useCallback(() => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-    }
-    if (readerRef.current) {
-      readerRef.current.cancel();
-      readerRef.current = null;
-    }
-    setIsLoading(false);
-  }, []);
+  const connect = () => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
-  const startStream = useCallback(async () => {
-    stopStream();
-    setCurrentText('');
-    
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-    
-    setIsLoading(true);
-    setError(null);
+    const ws = new WebSocket(url);
+    wsRef.current = ws;
 
-    try {
-      const response = await fetch(streamUrl, {
-        signal: controller.signal,
-        mode: 'cors',
-        credentials: 'omit',
-        headers: {
-          'Accept': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-        },
-      });
+    ws.onopen = () => {
+      setIsConnected(true);
+      setError(null);
+    };
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      if (!response.body) {
-        throw new Error('ReadableStream not supported');
-      }
-
-      const reader = response.body.getReader();
-      readerRef.current = reader;
-      const decoder = new TextDecoder();
-
+    ws.onmessage = (event) => {
       try {
-        while (true) {
-          const { value, done } = await reader.read();
-
-          if (done) break;
-
-          const chunk = decoder.decode(value, { stream: true });
-          if (chunk) {
-            setCurrentText(prev => prev + chunk);
-          }
-        }
-      } catch (readError) {
-        if (readError instanceof Error && readError.name === 'AbortError') {
+        const message: StreamMessage = JSON.parse(event.data);
+        if (message.type === 'close') {
+          ws.close();
           return;
         }
-        throw readError;
+        if (message.content) {
+          setText(prev => prev + message.content);
+        }
+      } catch (e) {
+        console.error('Error parsing message:', e);
       }
-    } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') {
-        return;
+    };
+
+    ws.onerror = (event) => {
+      setError('WebSocket error occurred');
+      console.error('WebSocket error:', event);
+    };
+
+    ws.onclose = () => {
+      setIsConnected(false);
+      if (!isPaused) {
+        // Attempt to reconnect after a delay if not paused
+        setTimeout(connect, 2000);
       }
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-      setError(errorMessage);
-      console.error('Stream error:', err);
-    } finally {
-      if (!abortControllerRef.current) {
-        readerRef.current = null;
-        setIsLoading(false);
-      }
+    };
+  };
+
+  const disconnect = () => {
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
     }
-  }, [streamUrl, stopStream]);
+  };
 
   useEffect(() => {
-    return () => {
-      stopStream();
-      setCurrentText('');
-      setError(null);
-      setIsLoading(false);
-    };
-  }, [stopStream, streamUrl]);
+    if (!isPaused) {
+      connect();
+    } else {
+      disconnect();
+    }
+    return () => disconnect();
+  }, [url, isPaused]);
 
-  return { currentText, error, isLoading, startStream, stopStream };
+  return { text, error, isConnected };
 };
 
-const StreamOutput: React.FC<{ title: string; stream: StreamReaderHook }> = ({ title, stream }) => (
+const StreamOutput: React.FC<{ title: string; stream: ReturnType<typeof useWebSocket> }> = ({ title, stream }) => (
   <div className={cn(
     "rounded-lg border border-gray-200 bg-white shadow-sm",
     "dark:bg-gray-900 dark:border-gray-800",
@@ -128,7 +95,7 @@ const StreamOutput: React.FC<{ title: string; stream: StreamReaderHook }> = ({ t
     <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
       <div className="flex items-center space-x-2">
         <h3 className="font-semibold">{title}</h3>
-        {stream.isLoading && (
+        {stream.isConnected && (
           <div className="flex items-center space-x-2 text-sm text-green-600 dark:text-green-400">
             <Radio className="w-3 h-3 animate-pulse" />
             <span>Live</span>
@@ -139,7 +106,7 @@ const StreamOutput: React.FC<{ title: string; stream: StreamReaderHook }> = ({ t
 
     <div className="p-4 min-h-[200px] relative">
       <div className="prose prose-sm max-w-none dark:prose-invert">
-        {stream.currentText && (
+        {stream.text && (
           <ReactMarkdown
             className="break-words"
             components={{
@@ -150,7 +117,7 @@ const StreamOutput: React.FC<{ title: string; stream: StreamReaderHook }> = ({ t
               ul: ({ ...props }) => <ul className="list-disc pl-4 mb-2" {...props} />,
               ol: ({ ...props }) => <ol className="list-decimal pl-4 mb-2" {...props} />,
               li: ({ ...props }) => <li className="mb-1" {...props} />,
-              code: ({ inline, children, ...props }: CodeProps) => 
+              code: ({ inline, children, ...props }: CodeProps) =>
                 inline ? (
                   <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-sm" {...props}>
                     {children}
@@ -168,24 +135,24 @@ const StreamOutput: React.FC<{ title: string; stream: StreamReaderHook }> = ({ t
               ),
             }}
           >
-            {stream.currentText}
+            {stream.text}
           </ReactMarkdown>
         )}
       </div>
 
-      {stream.isLoading && !stream.currentText && (
+      {!stream.isConnected && !stream.text && !stream.error && (
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="flex flex-col items-center space-y-2">
             <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
-            <span className="text-sm text-gray-500">Waiting for data...</span>
+            <span className="text-sm text-gray-500">Connecting...</span>
           </div>
         </div>
       )}
 
-      {!stream.isLoading && !stream.currentText && (
+      {!stream.isConnected && !stream.text && stream.error && (
         <div className="absolute inset-0 flex items-center justify-center">
-          <div className="text-gray-500 italic text-center">
-            No data yet
+          <div className="text-red-500 italic text-center">
+            {stream.error}
           </div>
         </div>
       )}
@@ -197,33 +164,21 @@ const StreamViewer: React.FC<StreamViewerProps> = ({
   onMessageReceived,
 }) => {
   const { endpointUrl } = useSettingsStore();
-  const { isPaused } = usePauseStore();
-  
-  const defaultStream = useStreamReader(`${endpointUrl}/stream`);
-  const toolStream = useStreamReader(`${endpointUrl}/stream/tool`);
 
-  // Handle streaming based on pause state
-  useEffect(() => {
-    if (!isPaused) {
-      defaultStream.startStream();
-      toolStream.startStream();
-    } else {
-      defaultStream.stopStream();
-      toolStream.stopStream();
-    }
-  }, [isPaused, defaultStream, toolStream]);
+  const defaultStream = useWebSocket(`ws://${endpointUrl.replace(/^https?:\/\//, '')}/ws`);
+  const toolStream = useWebSocket(`ws://${endpointUrl.replace(/^https?:\/\//, '')}/ws/tool`);
 
   // Handle message callback for any new content
   useEffect(() => {
     if (onMessageReceived) {
-      if (defaultStream.currentText) {
-        onMessageReceived(defaultStream.currentText);
+      if (defaultStream.text) {
+        onMessageReceived(defaultStream.text);
       }
-      if (toolStream.currentText) {
-        onMessageReceived(toolStream.currentText);
+      if (toolStream.text) {
+        onMessageReceived(toolStream.text);
       }
     }
-  }, [defaultStream.currentText, toolStream.currentText, onMessageReceived]);
+  }, [defaultStream.text, toolStream.text, onMessageReceived]);
 
   return (
     <div className="w-full space-y-4 transition-all duration-200">
