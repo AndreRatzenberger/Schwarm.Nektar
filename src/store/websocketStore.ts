@@ -2,7 +2,13 @@ import create from 'zustand';
 import { useSettingsStore } from './settingsStore';
 import { usePauseStore } from './pauseStore';
 import { useLogStore } from './logStore';
+import { useStreamStore } from './streamStore';
 import type { Log, Span } from '../types';
+
+interface StreamMessage {
+    type: 'default' | 'tool' | 'close';
+    content: string | null;
+}
 
 interface WebSocketState {
     chatRequested: boolean;
@@ -10,10 +16,15 @@ interface WebSocketState {
     chatConnected: boolean;
     breakConnected: boolean;
     spanConnected: boolean;
+    streamConnected: boolean;
+    mainChatConnected: boolean;
     error: string | null;
+    streamContent: string;
     chatWs: WebSocket | null;
     breakWs: WebSocket | null;
     spanWs: WebSocket | null;
+    streamWs: WebSocket | null;
+    mainChatWs: WebSocket | null;
     initialize: () => void;
     disconnect: () => void;
     sendChatMessage: (message: string) => void;
@@ -65,8 +76,10 @@ export const useWebSocketStore = create<WebSocketState>((set, get) => {
         if (state.chatWs) state.chatWs.close();
         if (state.breakWs) state.breakWs.close();
         if (state.spanWs) state.spanWs.close();
+        if (state.streamWs) state.streamWs.close();
+        if (state.mainChatWs) state.mainChatWs.close();
 
-        // Chat status WebSocket
+        // Chat status WebSocket (server -> client)
         const chatWs = new WebSocket(`${baseWsUrl}/ws/chat-status`);
         chatWs.onopen = () => set({ chatConnected: true, error: null });
         chatWs.onmessage = (event) => {
@@ -87,11 +100,11 @@ export const useWebSocketStore = create<WebSocketState>((set, get) => {
             reconnectTimeout = setTimeout(initializeWebSockets, 2000);
         };
 
-        // Break status WebSocket
+        // Break status WebSocket (bidirectional)
         const breakWs = new WebSocket(`${baseWsUrl}/ws/break-status`);
         breakWs.onopen = () => {
             set({ breakConnected: true, error: null });
-            // Send initial pause state to backend
+            // Send initial pause state to backend since this is a bidirectional endpoint
             breakWs.send(JSON.stringify({ set_break: true }));
         };
         breakWs.onmessage = (event) => {
@@ -113,7 +126,7 @@ export const useWebSocketStore = create<WebSocketState>((set, get) => {
             reconnectTimeout = setTimeout(initializeWebSockets, 2000);
         };
 
-        // Span WebSocket
+        // Span WebSocket (server -> client)
         const spanWs = new WebSocket(`${baseWsUrl}/ws/spans`);
         spanWs.onopen = () => set({ spanConnected: true, error: null });
         spanWs.onmessage = (event) => {
@@ -137,7 +150,68 @@ export const useWebSocketStore = create<WebSocketState>((set, get) => {
             reconnectTimeout = setTimeout(initializeWebSockets, 2000);
         };
 
-        set({ chatWs, breakWs, spanWs });
+        // Stream WebSocket (server -> client)
+        const streamWs = new WebSocket(`${baseWsUrl}/ws/stream`);
+        streamWs.onopen = () => {
+            set({ streamConnected: true, error: null });
+            // Clear stream content and messages when establishing new connection
+            set({ streamContent: '' });
+            useStreamStore.getState().clearMessages();
+        };
+        streamWs.onmessage = (event) => {
+            try {
+                const message: StreamMessage = JSON.parse(event.data);
+                if (message.type === 'close') {
+                    // When we receive a close signal, add the current content as a message
+                    const { streamContent } = get();
+                    if (streamContent) {
+                        useStreamStore.getState().addMessage(streamContent);
+                    }
+                    streamWs.close();
+                    return;
+                }
+                if (message.content) {
+                    // Update current stream content
+                    set(state => ({ streamContent: state.streamContent + message.content }));
+                }
+            } catch (e) {
+                console.error('Error parsing stream message:', e);
+            }
+        };
+        streamWs.onerror = () => set({ error: 'WebSocket error occurred' });
+        streamWs.onclose = () => {
+            set({ streamConnected: false });
+            // Add final content as message if any exists
+            const { streamContent } = get();
+            if (streamContent) {
+                useStreamStore.getState().addMessage(streamContent);
+            }
+            // Attempt to reconnect after delay
+            if (reconnectTimeout) clearTimeout(reconnectTimeout);
+            reconnectTimeout = setTimeout(initializeWebSockets, 2000);
+        };
+
+        // Main Chat WebSocket (bidirectional)
+        const mainChatWs = new WebSocket(`${baseWsUrl}/ws/chat`);
+        mainChatWs.onopen = () => set({ mainChatConnected: true, error: null });
+        mainChatWs.onmessage = (event) => {
+            try {
+                const message = JSON.parse(event.data);
+                // Store or process chat messages as needed
+                console.log('Chat message received:', message);
+            } catch (e) {
+                console.error('Error parsing main chat message:', e);
+            }
+        };
+        mainChatWs.onerror = () => set({ error: 'WebSocket error occurred' });
+        mainChatWs.onclose = () => {
+            set({ mainChatConnected: false });
+            // Attempt to reconnect after delay
+            if (reconnectTimeout) clearTimeout(reconnectTimeout);
+            reconnectTimeout = setTimeout(initializeWebSockets, 2000);
+        };
+
+        set({ chatWs, breakWs, spanWs, streamWs, mainChatWs });
     };
 
     return {
@@ -146,10 +220,15 @@ export const useWebSocketStore = create<WebSocketState>((set, get) => {
         chatConnected: false,
         breakConnected: false,
         spanConnected: false,
+        streamConnected: false,
+        mainChatConnected: false,
         error: null,
+        streamContent: '',
         chatWs: null,
         breakWs: null,
         spanWs: null,
+        streamWs: null,
+        mainChatWs: null,
 
         initialize: () => {
             if (reconnectTimeout) clearTimeout(reconnectTimeout);
@@ -162,17 +241,24 @@ export const useWebSocketStore = create<WebSocketState>((set, get) => {
                 clearTimeout(reconnectTimeout);
                 reconnectTimeout = null;
             }
-            const { chatWs, breakWs, spanWs } = get();
+            const { chatWs, breakWs, spanWs, streamWs, mainChatWs } = get();
             if (chatWs) chatWs.close();
             if (breakWs) breakWs.close();
             if (spanWs) spanWs.close();
+            if (streamWs) streamWs.close();
+            if (mainChatWs) mainChatWs.close();
             set({
                 chatWs: null,
                 breakWs: null,
                 spanWs: null,
+                streamWs: null,
+                mainChatWs: null,
                 chatConnected: false,
                 breakConnected: false,
-                spanConnected: false
+                spanConnected: false,
+                streamConnected: false,
+                mainChatConnected: false,
+                streamContent: ''
             });
         },
 
@@ -204,9 +290,9 @@ export const useWebSocketStore = create<WebSocketState>((set, get) => {
         },
 
         sendChatMessage: (message: string) => {
-            const { chatWs } = get();
-            if (chatWs?.readyState === WebSocket.OPEN) {
-                chatWs.send(message);
+            const { mainChatWs } = get();
+            if (mainChatWs?.readyState === WebSocket.OPEN) {
+                mainChatWs.send(message);
             }
         },
 
@@ -218,7 +304,7 @@ export const useWebSocketStore = create<WebSocketState>((set, get) => {
             set({ isPaused: newPausedState });
             usePauseStore.getState().setIsPaused(newPausedState);
 
-            // Send to backend
+            // Send to backend since this is a bidirectional endpoint
             if (breakWs?.readyState === WebSocket.OPEN) {
                 breakWs.send(JSON.stringify({ set_break: newPausedState }));
             }
