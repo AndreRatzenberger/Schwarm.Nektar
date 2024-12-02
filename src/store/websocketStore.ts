@@ -18,6 +18,7 @@ interface WebSocketState {
     disconnect: () => void;
     sendChatMessage: (message: string) => void;
     toggleBreak: () => void;
+    loadPastEvents: () => Promise<void>;
 }
 
 function transformSpanToLog(span: Span): Log {
@@ -88,7 +89,11 @@ export const useWebSocketStore = create<WebSocketState>((set, get) => {
 
         // Break status WebSocket
         const breakWs = new WebSocket(`${baseWsUrl}/ws/break-status`);
-        breakWs.onopen = () => set({ breakConnected: true, error: null });
+        breakWs.onopen = () => {
+            set({ breakConnected: true, error: null });
+            // Send initial pause state to backend
+            breakWs.send(JSON.stringify({ set_break: true }));
+        };
         breakWs.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
@@ -137,7 +142,7 @@ export const useWebSocketStore = create<WebSocketState>((set, get) => {
 
     return {
         chatRequested: false,
-        isPaused: false,
+        isPaused: true, // Start in paused state
         chatConnected: false,
         breakConnected: false,
         spanConnected: false,
@@ -148,6 +153,7 @@ export const useWebSocketStore = create<WebSocketState>((set, get) => {
 
         initialize: () => {
             if (reconnectTimeout) clearTimeout(reconnectTimeout);
+            set({ isPaused: true }); // Ensure we start paused
             initializeWebSockets();
         },
 
@@ -170,6 +176,33 @@ export const useWebSocketStore = create<WebSocketState>((set, get) => {
             });
         },
 
+        loadPastEvents: async () => {
+            try {
+                const { endpointUrl } = useSettingsStore.getState();
+                const { setLogs } = useLogStore.getState();
+
+                const response = await fetch(`${endpointUrl}/spans`, {
+                    method: 'GET',
+                    mode: 'cors',
+                    headers: {
+                        'Accept': 'application/json',
+                    },
+                    credentials: 'omit'
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Server returned ${response.status} ${response.statusText}`);
+                }
+
+                const spans = await response.json();
+                const logs = spans.map(transformSpanToLog);
+                setLogs(logs);
+            } catch (error) {
+                console.error('Failed to load past events:', error);
+                set({ error: 'Failed to load past events' });
+            }
+        },
+
         sendChatMessage: (message: string) => {
             const { chatWs } = get();
             if (chatWs?.readyState === WebSocket.OPEN) {
@@ -179,8 +212,15 @@ export const useWebSocketStore = create<WebSocketState>((set, get) => {
 
         toggleBreak: () => {
             const { breakWs, isPaused } = get();
+            const newPausedState = !isPaused;
+
+            // Update local state immediately
+            set({ isPaused: newPausedState });
+            usePauseStore.getState().setIsPaused(newPausedState);
+
+            // Send to backend
             if (breakWs?.readyState === WebSocket.OPEN) {
-                breakWs.send(JSON.stringify({ set_break: !isPaused }));
+                breakWs.send(JSON.stringify({ set_break: newPausedState }));
             }
         },
     };

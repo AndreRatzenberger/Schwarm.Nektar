@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { LayoutDashboard, ScrollText, Network, History, Settings } from 'lucide-react';
 import DashboardView from './views/DashboardView';
 import LogsView from './views/LogsView';
@@ -8,11 +8,26 @@ import SettingsView from './views/SettingsView';
 import MessageFlow from './components/message-flow';
 import { ActiveRunBanner } from './components/ActiveRunBanner';
 import { cn } from './lib/utils';
+import { useWebSocketStore } from './store/websocketStore';
 
 type View = 'dashboard' | 'messageflow' | 'logs' | 'network' | 'runs' | 'settings';
 
 function App() {
   const [currentView, setCurrentView] = React.useState<View>('dashboard');
+  const { initialize, loadPastEvents } = useWebSocketStore();
+
+  // Initialize WebSocket connections and load past events
+  useEffect(() => {
+    const initializeApp = async () => {
+      // First initialize WebSocket connections (starts in pause mode)
+      initialize();
+
+      // Then load past events
+      await loadPastEvents();
+    };
+
+    initializeApp();
+  }, [initialize, loadPastEvents]);
 
   const views = {
     dashboard: <DashboardView />,
@@ -28,7 +43,7 @@ function App() {
     { id: 'logs', label: 'Logs', icon: ScrollText },
     { id: 'network', label: 'Network', icon: Network },
     { id: 'runs', label: 'Runs', icon: History },
-    { id: 'messageflow', label: 'Message Flow', icon: ScrollText},
+    { id: 'messageflow', label: 'Message Flow', icon: ScrollText },
     { id: 'settings', label: 'Settings', icon: Settings }
   ];
 

@@ -67,7 +67,6 @@ export function ActiveRunBanner() {
   const latestId = useLogStore(state => state.latestId);
   const isLoading = useSettingsStore(state => state.isLoading);
   const showRefreshButton = useSettingsStore(state => state.showRefreshButton);
-  const refreshInterval = useSettingsStore(state => state.refreshInterval);
   const { setData, setError, error } = useDataStore();
   const { appendLogs, setLogs } = useLogStore();
   const { findRunIdFromLogs, setActiveRunId } = useRunStore();
@@ -198,21 +197,6 @@ export function ActiveRunBanner() {
     fetchTurnAmount();
   }, [fetchWithRetry, setIsLoading, fetchBreakpoints, fetchTurnAmount]);
 
-  // Set up refresh interval
-  useEffect(() => {
-    if (!refreshInterval) return;
-
-    const intervalId = setInterval(() => {
-      if (!isLoading) {
-        fetchWithRetry();
-        fetchBreakpoints();
-        fetchTurnAmount();
-      }
-    }, refreshInterval);
-
-    return () => clearInterval(intervalId);
-  }, [fetchWithRetry, refreshInterval, isLoading, isPaused]);
-
   // Update local turn amount when store value changes
   useEffect(() => {
     setLocalTurnAmount(turnAmount.toString());
@@ -247,8 +231,8 @@ export function ActiveRunBanner() {
                 <button
                   onClick={toggleBreak}
                   className={`px-3 py-1 rounded-md transition-colors ${isPaused
-                      ? 'bg-yellow-100 hover:bg-yellow-200 text-yellow-800'
-                      : 'bg-green-100 hover:bg-green-200 text-green-800'
+                    ? 'bg-yellow-100 hover:bg-yellow-200 text-yellow-800'
+                    : 'bg-green-100 hover:bg-green-200 text-green-800'
                     }`}
                 >
                   {isPaused ? 'Resume' : 'Pause'}
