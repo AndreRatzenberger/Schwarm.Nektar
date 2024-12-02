@@ -6,34 +6,20 @@ import { usePauseStore } from '../store/pauseStore';
 import { useRunStore } from '../store/runStore';
 import RawDataView from './RawDataView';
 import { Input } from '../components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Checkbox } from '../components/ui/checkbox';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Label } from '../components/ui/label';
 
-const REFRESH_INTERVALS = [
-  { label: 'Off', value: 'off' },
-  { label: '1 seconds', value: '1000' },
-  { label: '5 seconds', value: '5000' },
-  { label: '10 seconds', value: '10000' },
-  { label: '30 seconds', value: '30000' },
-  { label: '1 minute', value: '60000' },
-  { label: '5 minute', value: '300000' },
-  { label: '10 minute', value: '600000' }
-];
-
 export default function SettingsView() {
   const [showConfirmation, setShowConfirmation] = useState(false);
-  
-  const { 
-    endpointUrl, 
-    refreshInterval,
+
+  const {
+    endpointUrl,
     showRefreshButton,
     groupLogsByParent,
     showLogIndentation,
     setEndpointUrl,
-    setRefreshInterval,
     setShowRefreshButton,
     setGroupLogsByParent,
     setShowLogIndentation
@@ -45,19 +31,6 @@ export default function SettingsView() {
     usePauseStore.getState().reset();
     useRunStore.getState().setActiveRunId(null);
     setShowConfirmation(false);
-  };
-
-  const handleRefreshIntervalChange = (value: string) => {
-    if (value === 'off') {
-      setRefreshInterval(null);
-    } else {
-      setRefreshInterval(Number(value));
-    }
-  };
-
-  const getCurrentRefreshValue = () => {
-    if (refreshInterval === null) return 'off';
-    return String(refreshInterval);
   };
 
   return (
@@ -75,28 +48,6 @@ export default function SettingsView() {
             />
             <p className="text-sm text-muted-foreground">
               The base URL of your agent framework endpoint
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="refresh">Refresh Interval</Label>
-            <Select
-              value={getCurrentRefreshValue()}
-              onValueChange={handleRefreshIntervalChange}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select refresh interval" />
-              </SelectTrigger>
-              <SelectContent>
-                {REFRESH_INTERVALS.map(({ label, value }) => (
-                  <SelectItem key={value} value={value}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-sm text-muted-foreground">
-              How often the application should fetch new data
             </p>
           </div>
 
@@ -121,7 +72,7 @@ export default function SettingsView() {
 
           <div className="border-t border-border pt-4">
             <h3 className="text-sm font-medium mb-4">Log View Settings</h3>
-            
+
             <div className="space-y-4">
               <div className="flex items-center space-x-2">
                 <Checkbox
@@ -175,7 +126,7 @@ export default function SettingsView() {
               Clear all locally stored data. This will not affect the server.
             </p>
           </div>
-          
+
           <RawDataView />
         </CardContent>
       </Card>

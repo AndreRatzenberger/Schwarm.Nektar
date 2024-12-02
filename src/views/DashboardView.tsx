@@ -1,12 +1,15 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useEffect, useState } from 'react';
-import { Info, Clock, Cpu, DollarSign, TrendingUp, TrendingDown } from 'lucide-react';
+import { Info, Clock, Cpu, DollarSign, TrendingUp, TrendingDown, Send, MessageSquare } from 'lucide-react';
 import { useLogStore } from '../store/logStore';
 import { useRunStore } from '../store/runStore';
+import { useWebSocketStore } from '../store/websocketStore';
 import CompactNetworkView from '../components/CompactNetworkView';
 import CompactMessageFlow from '../components/CompactMessageFlow';
 import StreamViewer from '../components/StreamViewer';
 import { Card } from '../components/ui/card';
+import { Input } from '../components/ui/input';
+import { Button } from '../components/ui/button';
 
 function DashboardView() {
   const getFilteredLogs = useLogStore(state => state.getFilteredLogs);
@@ -20,14 +23,20 @@ function DashboardView() {
   const [activeAgents, setActiveAgents] = useState(0);
   const [prevActiveAgents, setPrevActiveAgents] = useState(0);
   const [eventsToday, setEventsTotal] = useState(0);
-  const [prevEventsToday, setPrevEventsTotal] = useState(0);
+  const [chatInput, setChatInput] = useState('');
+
+  // WebSocket store
+  const {
+    chatRequested,
+    chatConnected,
+    sendChatMessage
+  } = useWebSocketStore();
 
   useEffect(() => {
     // Store previous values before updating
     setPrevTokenUsage(tokenUsage);
     setPrevCostSpent(costSpent);
     setPrevActiveAgents(activeAgents);
-    setPrevEventsTotal(eventsToday);
 
     // Calculate token usage and cost from START_TURN logs
     let maxTokens = 0;
@@ -71,7 +80,7 @@ function DashboardView() {
     const isUp = current > previous;
     const Icon = isUp ? TrendingUp : TrendingDown;
     const colorClass = isUp ? 'text-green-500' : 'text-red-500';
-    
+
     return (
       <div className={`flex items-center ${colorClass} text-sm ml-2`}>
         <Icon className="h-4 w-4" />
@@ -83,8 +92,44 @@ function DashboardView() {
     console.log('New message received:', message);
   };
 
+  const handleSendChat = () => {
+    if (chatInput.trim() && chatConnected) {
+      sendChatMessage(chatInput.trim());
+      setChatInput('');
+    }
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendChat();
+    }
+  };
+
   return (
     <div className="space-y-6">
+      {/* Chat Input */}
+      {chatRequested && (
+        <Card className="bg-white p-4 rounded-lg shadow-sm">
+          <div className="flex items-center space-x-2">
+            <div className="flex items-center text-blue-500 mr-2">
+              <MessageSquare className="h-5 w-5" />
+              <span className="ml-2 font-medium">Chat Requested</span>
+            </div>
+            <Input
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              onKeyPress={handleKeyPress}
+              placeholder="Type your message..."
+              className="flex-1"
+            />
+            <Button onClick={handleSendChat} disabled={!chatConnected}>
+              <Send className="h-4 w-4" />
+            </Button>
+          </div>
+        </Card>
+      )}
+
       {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <Card className="bg-white p-6 rounded-lg shadow-sm">
