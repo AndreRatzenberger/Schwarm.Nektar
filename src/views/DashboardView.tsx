@@ -13,6 +13,7 @@ function DashboardView() {
   const activeRunId = useRunStore(state => state.activeRunId);
   const logs = getFilteredLogs();
   const [tokenUsage, setTokenUsage] = useState(0);
+  const [turns, setTurns] = useState(0);
   const [prevTokenUsage, setPrevTokenUsage] = useState(0);
   const [costSpent, setCostSpent] = useState(0);
   const [prevCostSpent, setPrevCostSpent] = useState(0);
@@ -31,6 +32,7 @@ function DashboardView() {
     // Calculate token usage and cost from START_TURN logs
     let maxTokens = 0;
     let maxCost = 0;
+    let turns = 0;
     const seenAgents = new Set();
     let totalEvents = 0;
 
@@ -41,6 +43,11 @@ function DashboardView() {
 
       const attributes = log.attributes as { [key: string]: any };
       totalEvents++;
+
+      // Process START_TURN logs for turn data
+      if (log.level === 'START_TURN') {
+        turns++;
+      }
 
       // Process START_TURN logs for token and cost data
       if (log.level === 'POST_MESSAGE_COMPLETION' && log.attributes != null) {
@@ -54,6 +61,7 @@ function DashboardView() {
 
     setTokenUsage(maxTokens);
     setCostSpent(maxCost);
+    setTurns(turns);
     setActiveAgents(seenAgents.size);
     setEventsTotal(totalEvents);
   }, [logs, activeRunId]);
@@ -96,13 +104,13 @@ function DashboardView() {
             <Clock className="h-8 w-8 text-indigo-600" />
             <div className="ml-4 flex items-center">
               <div>
-                <p className="text-sm font-medium text-gray-600">Events Today</p>
-                <p className="text-2xl font-semibold text-gray-900">{eventsToday}</p>
+                <p className="text-sm font-medium text-gray-600">Events / Turns</p>
+                <p className="text-2xl font-semibold text-gray-900">{eventsToday} / {turns}</p>
               </div>
-              <TrendIndicator current={eventsToday} previous={prevEventsToday} />
             </div>
           </div>
         </Card>
+
         <Card className="bg-white p-6 rounded-lg shadow-sm">
           <div className="flex items-center">
             <DollarSign className="h-8 w-8 text-indigo-600" />
