@@ -1,15 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { useRunStore } from '../store/runStore';
 import { useLogStore } from '../store/logStore';
-import { usePauseStore } from '../store/pauseStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useDataStore } from '../store/dataStore';
 import { useBreakpointStore } from '../store/breakpointStore';
-import PlayPauseButton from './PlayPauseButton';
+import { useWebSocketStore } from '../store/websocketStore';
 import RefreshButton from './RefreshButton';
 import { Badge } from './ui/badge';
 import { Input } from './ui/input';
-import { Loader2, AlertCircle } from 'lucide-react';
+import { Loader2, AlertCircle, MessageSquare, Wifi, WifiOff } from 'lucide-react';
 import type { Log, Span } from '../types';
 
 const MAX_RETRIES = 3;
@@ -31,25 +30,25 @@ function transformSpansToLogs(spans: Span[]): Log[] {
 
     const [agent, activity] = span.name.split('-').map(str => str.trim());
     const isEventType = activity && activity.includes("EventType.");
-    
+
     const isError = span.status_code == 'ERROR';
     const timestamp = new Date(Number(span.start_time) / 1_000_000).toISOString();
-    
+
     let level: Log['level'] = 'LOG';
     if (isError) {
       level = 'ERROR';
     } else if (isEventType) {
       const eventType = activity.replace("EventType.", "");
-      if (eventType === 'START_TURN' || eventType === 'INSTRUCT' || 
-          eventType === 'MESSAGE_COMPLETION' || eventType === 'POST_MESSAGE_COMPLETION' || 
-          eventType === 'TOOL_EXECUTION' || eventType === 'POST_TOOL_EXECUTION' || 
-          eventType === 'HANDOFF') {
+      if (eventType === 'START_TURN' || eventType === 'INSTRUCT' ||
+        eventType === 'MESSAGE_COMPLETION' || eventType === 'POST_MESSAGE_COMPLETION' ||
+        eventType === 'TOOL_EXECUTION' || eventType === 'POST_TOOL_EXECUTION' ||
+        eventType === 'HANDOFF') {
         level = eventType;
       } else {
         level = 'INFO';
       }
     }
-    
+
     return {
       id: span.id,
       timestamp,
@@ -66,7 +65,6 @@ function transformSpansToLogs(spans: Span[]): Log[] {
 export function ActiveRunBanner() {
   const activeRunId = useRunStore(state => state.activeRunId);
   const latestId = useLogStore(state => state.latestId);
-  const isPaused = usePauseStore(state => state.isPaused);
   const isLoading = useSettingsStore(state => state.isLoading);
   const showRefreshButton = useSettingsStore(state => state.showRefreshButton);
   const refreshInterval = useSettingsStore(state => state.refreshInterval);
@@ -79,6 +77,18 @@ export function ActiveRunBanner() {
   const [lastSuccessfulFetch, setLastSuccessfulFetch] = useState<Date | null>(null);
   const [localTurnAmount, setLocalTurnAmount] = useState(turnAmount.toString());
 
+  // WebSocket store
+  const {
+    chatRequested,
+    isPaused,
+    chatConnected,
+    breakConnected,
+    error: wsError,
+    initialize: initializeWebSockets,
+    disconnect: disconnectWebSockets,
+    toggleBreak
+  } = useWebSocketStore();
+
   const handleTurnAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     if (/^\d*$/.test(value)) { // Only allow digits
@@ -90,6 +100,18 @@ export function ActiveRunBanner() {
     }
   };
 
+  const getConnectionStatus = () => {
+    if (!chatConnected && !breakConnected) return 'Disconnected';
+    if (!chatConnected || !breakConnected) return 'Partially Connected';
+    return 'Connected';
+  };
+
+  const getConnectionIcon = () => {
+    if (!chatConnected && !breakConnected) return <WifiOff className="h-4 w-4 text-red-500" />;
+    if (!chatConnected || !breakConnected) return <Wifi className="h-4 w-4 text-yellow-500" />;
+    return <Wifi className="h-4 w-4 text-green-500" />;
+  };
+
   const fetchWithRetry = React.useCallback(async (retryCount = 0, delay = INITIAL_RETRY_DELAY) => {
     try {
       const url = new URL(`${endpointUrl}/spans`);
@@ -98,7 +120,7 @@ export function ActiveRunBanner() {
       if (currentLatestId) {
         url.searchParams.append('after_id', currentLatestId);
       }
-      
+
       const response = await fetch(url, {
         method: 'GET',
         mode: 'cors',
@@ -111,24 +133,24 @@ export function ActiveRunBanner() {
       if (!response.ok) {
         throw new Error(`Server returned ${response.status} ${response.statusText}`);
       }
-      
+
       const jsonData = await response.json();
       setIsConnected(true);
       setLastSuccessfulFetch(new Date());
-      
+
       // Store raw spans in dataStore
       setData(jsonData);
-      
+
       // Transform spans to logs
       const logs = transformSpansToLogs(jsonData);
-      
+
       if (logs.length > 0) {
         if (currentLatestId) {
           appendLogs(logs);
         } else {
           setLogs(logs);
         }
-        
+
         const runId = findRunIdFromLogs(logs);
         if (runId) {
           setActiveRunId(runId);
@@ -140,7 +162,7 @@ export function ActiveRunBanner() {
       console.error('Fetch error:', err);
       setIsConnected(false);
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch data';
-      
+
       if (retryCount < MAX_RETRIES) {
         setTimeout(() => {
           fetchWithRetry(retryCount + 1, delay * 2);
@@ -156,11 +178,17 @@ export function ActiveRunBanner() {
       } else {
         errorDetails = `${errorMessage}. Please check your network connection and server status.`;
       }
-      
+
       setError(errorDetails);
       setIsLoading(false);
     }
   }, [endpointUrl, setData, setError, appendLogs, setLogs, findRunIdFromLogs, setActiveRunId, setIsLoading]);
+
+  // Initialize WebSocket connections
+  useEffect(() => {
+    initializeWebSockets();
+    return () => disconnectWebSockets();
+  }, [initializeWebSockets, disconnectWebSockets]);
 
   // Initial fetch on mount
   useEffect(() => {
@@ -181,7 +209,7 @@ export function ActiveRunBanner() {
         fetchTurnAmount();
       }
     }, refreshInterval);
-    
+
     return () => clearInterval(intervalId);
   }, [fetchWithRetry, refreshInterval, isLoading, isPaused]);
 
@@ -202,9 +230,12 @@ export function ActiveRunBanner() {
           ) : !isConnected ? (
             <div className="flex items-center text-red-600">
               <AlertCircle className="h-5 w-5 mr-2" />
-              <p className="text-sm">{error || `Unable to connect to ${endpointUrl}`}</p>
-              <button 
-                onClick={() => fetchWithRetry()} 
+              <p className="text-sm">{error || wsError || `Unable to connect to ${endpointUrl}`}</p>
+              <button
+                onClick={() => {
+                  fetchWithRetry();
+                  initializeWebSockets();
+                }}
                 className="ml-4 px-2 py-1 text-sm bg-red-100 hover:bg-red-200 rounded-md transition-colors"
               >
                 Retry Connection
@@ -213,13 +244,25 @@ export function ActiveRunBanner() {
           ) : (
             <>
               <div className="flex items-center space-x-4">
-                <PlayPauseButton />
-                
+                <button
+                  onClick={toggleBreak}
+                  className={`px-3 py-1 rounded-md transition-colors ${isPaused
+                      ? 'bg-yellow-100 hover:bg-yellow-200 text-yellow-800'
+                      : 'bg-green-100 hover:bg-green-200 text-green-800'
+                    }`}
+                >
+                  {isPaused ? 'Resume' : 'Pause'}
+                </button>
+
                 {showRefreshButton && (
                   <RefreshButton onRefresh={fetchWithRetry} />
                 )}
 
                 <div className="flex items-center space-x-2">
+                  <div className="flex items-center space-x-1">
+                    {getConnectionIcon()}
+                    <span className="text-sm text-gray-600">{getConnectionStatus()}</span>
+                  </div>
                   <span className="text-sm">
                     Status: <span className={`font-medium ${isPaused ? 'text-yellow-600' : 'text-green-600'}`}>
                       {isPaused ? 'Paused' : 'Running'}
@@ -231,6 +274,13 @@ export function ActiveRunBanner() {
                     </span>
                   )}
                 </div>
+
+                {chatRequested && (
+                  <div className="flex items-center space-x-2">
+                    <MessageSquare className="h-4 w-4 text-blue-500" />
+                    <span className="text-sm text-blue-500">Chat Requested</span>
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center space-x-6">

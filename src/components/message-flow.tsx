@@ -2,11 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { Card, CardDescription, CardHeader, CardTitle } from './ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { ScrollArea } from './ui/scroll-area'
-import { MessageSquare } from 'lucide-react'
+import { MessageSquare, Send } from 'lucide-react'
 import { AgentDetailsPanel } from './agent-details-panel'
 import { useLogStore } from '../store/logStore'
 import { useStreamStore } from '../store/streamStore'
+import { useWebSocketStore } from '../store/websocketStore'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
+import { Input } from './ui/input'
+import { Button } from './ui/button'
 import type { Log } from '../types'
 
 const levelColors = {
@@ -148,6 +151,14 @@ const EventFlow = () => {
 const MessageFlow = () => {
   const messages = useStreamStore(state => state.messages)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
+  const [chatInput, setChatInput] = useState('')
+
+  // WebSocket store
+  const {
+    chatRequested,
+    chatConnected,
+    sendChatMessage
+  } = useWebSocketStore()
 
   useEffect(() => {
     if (scrollAreaRef.current) {
@@ -155,9 +166,23 @@ const MessageFlow = () => {
     }
   }, [messages])
 
+  const handleSendChat = () => {
+    if (chatInput.trim() && chatConnected) {
+      sendChatMessage(chatInput.trim())
+      setChatInput('')
+    }
+  }
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSendChat()
+    }
+  }
+
   return (
-    <div>
-      <ScrollArea className="h-[600px] w-full rounded-md border p-4" ref={scrollAreaRef}>
+    <div className="flex flex-col h-full">
+      <ScrollArea className="flex-1 h-[550px] w-full rounded-md border p-4" ref={scrollAreaRef}>
         <div className="space-y-4">
           {messages.map(message => (
             <div key={message.id} className="flex flex-col items-start">
@@ -173,6 +198,21 @@ const MessageFlow = () => {
           ))}
         </div>
       </ScrollArea>
+
+      {chatRequested && (
+        <div className="mt-4 flex space-x-2">
+          <Input
+            value={chatInput}
+            onChange={(e) => setChatInput(e.target.value)}
+            onKeyPress={handleKeyPress}
+            placeholder="Type your message..."
+            className="flex-1"
+          />
+          <Button onClick={handleSendChat} disabled={!chatConnected}>
+            <Send className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
     </div>
   )
 }
