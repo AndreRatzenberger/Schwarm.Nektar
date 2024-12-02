@@ -4,6 +4,7 @@ import { Loader2, Radio } from 'lucide-react';
 import { Alert, AlertDescription } from './ui/alert';
 import { useSettingsStore } from '../store/settingsStore';
 import { usePauseStore } from '../store/pauseStore';
+import { useStreamStore } from '../store/streamStore';
 import { cn } from '../lib/utils';
 
 interface StreamMessage {
@@ -26,6 +27,8 @@ const useWebSocket = (url: string) => {
   const [isConnected, setIsConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const { isPaused } = usePauseStore();
+  const addMessage = useStreamStore(state => state.addMessage);
+  const currentMessageRef = useRef('');
 
   const connect = () => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
@@ -36,17 +39,26 @@ const useWebSocket = (url: string) => {
     ws.onopen = () => {
       setIsConnected(true);
       setError(null);
+      currentMessageRef.current = '';
     };
 
     ws.onmessage = (event) => {
       try {
         const message: StreamMessage = JSON.parse(event.data);
+
         if (message.type === 'close') {
+          // When we receive a close signal, the current message is complete
+          if (currentMessageRef.current) {
+            addMessage(currentMessageRef.current);
+            currentMessageRef.current = '';
+          }
           ws.close();
           return;
         }
+
         if (message.content) {
           setText(prev => prev + message.content);
+          currentMessageRef.current += message.content;
         }
       } catch (e) {
         console.error('Error parsing message:', e);
@@ -166,33 +178,26 @@ const StreamViewer: React.FC<StreamViewerProps> = ({
   const { endpointUrl } = useSettingsStore();
 
   const defaultStream = useWebSocket(`ws://${endpointUrl.replace(/^https?:\/\//, '')}/ws`);
-  const toolStream = useWebSocket(`ws://${endpointUrl.replace(/^https?:\/\//, '')}/ws/tool`);
 
   // Handle message callback for any new content
   useEffect(() => {
-    if (onMessageReceived) {
-      if (defaultStream.text) {
-        onMessageReceived(defaultStream.text);
-      }
-      if (toolStream.text) {
-        onMessageReceived(toolStream.text);
-      }
+    if (onMessageReceived && defaultStream.text) {
+      onMessageReceived(defaultStream.text);
     }
-  }, [defaultStream.text, toolStream.text, onMessageReceived]);
+  }, [defaultStream.text, onMessageReceived]);
 
   return (
     <div className="w-full space-y-4 transition-all duration-200">
-      {(defaultStream.error || toolStream.error) && (
+      {defaultStream.error && (
         <Alert variant="destructive" className="animate-in slide-in-from-top">
           <AlertDescription>
-            {defaultStream.error || toolStream.error}
+            {defaultStream.error}
           </AlertDescription>
         </Alert>
       )}
 
       <div className="flex gap-4">
-        <StreamOutput title="Default Stream" stream={defaultStream} />
-        <StreamOutput title="Tool Stream" stream={toolStream} />
+        <StreamOutput title="Stream" stream={defaultStream} />
       </div>
     </div>
   );
