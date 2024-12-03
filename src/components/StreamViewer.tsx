@@ -177,7 +177,7 @@ const StreamViewer: React.FC<StreamViewerProps> = ({
 }) => {
   const { endpointUrl } = useSettingsStore();
 
-  const defaultStream = useWebSocket(`ws://${endpointUrl.replace(/^https?:\/\//, '')}/ws`);
+  const defaultStream = useWebSocket(`ws://${endpointUrl.replace(/^https?:\/\//, '')}/ws/stream`);
 
   // Handle message callback for any new content
   useEffect(() => {
