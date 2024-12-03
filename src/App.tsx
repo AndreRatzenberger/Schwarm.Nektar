@@ -5,7 +5,7 @@ import LogsView from './views/LogsView';
 import NetworkView from './views/NetworkView';
 import RunsView from './views/RunsView';
 import SettingsView from './views/SettingsView';
-import WebSocketView from './views/WebSocketView';
+import WebSocketChat from './views/WebSocketView';
 import MessageFlow from './components/message-flow';
 import { ActiveRunBanner } from './components/ActiveRunBanner';
 import { cn } from './lib/utils';
@@ -22,7 +22,7 @@ function App() {
     runs: <RunsView />,
     messageflow: <MessageFlow />,
     settings: <SettingsView />,
-    websocket: <WebSocketView />
+    websocket: <WebSocketChat />
   };
 
   const navItems = [

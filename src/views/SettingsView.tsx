@@ -25,9 +25,10 @@ const REFRESH_INTERVALS = [
 
 export default function SettingsView() {
   const [showConfirmation, setShowConfirmation] = useState(false);
-  
-  const { 
-    endpointUrl, 
+
+  const {
+    endpointUrl,
+    wsEndpointUrl,
     refreshInterval,
     showRefreshButton,
     groupLogsByParent,
@@ -77,6 +78,18 @@ export default function SettingsView() {
               The base URL of your agent framework endpoint
             </p>
           </div>
+          <div className="space-y-2">
+            <Label htmlFor="endpoint">Websocket Endpoint URL</Label>
+            <Input
+              id="endpoint"
+              value={wsEndpointUrl}
+              onChange={(e) => setEndpointUrl(e.target.value)}
+              placeholder="ws://localhost:8765"
+            />
+            <p className="text-sm text-muted-foreground">
+              The base URL of your agent framework endpoint
+            </p>
+          </div>
 
           <div className="space-y-2">
             <Label htmlFor="refresh">Refresh Interval</Label>
@@ -121,7 +134,7 @@ export default function SettingsView() {
 
           <div className="border-t border-border pt-4">
             <h3 className="text-sm font-medium mb-4">Log View Settings</h3>
-            
+
             <div className="space-y-4">
               <div className="flex items-center space-x-2">
                 <Checkbox
@@ -175,7 +188,7 @@ export default function SettingsView() {
               Clear all locally stored data. This will not affect the server.
             </p>
           </div>
-          
+
           <RawDataView />
         </CardContent>
       </Card>

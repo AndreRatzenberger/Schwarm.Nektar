@@ -2,8 +2,7 @@ import { useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Loader2, Radio } from 'lucide-react';
 import { Alert, AlertDescription } from './ui/alert';
-import { usePauseStore } from '../store/pauseStore';
-import { useWebSocketStore } from '../store/websocketStore';
+import { useWebSocket } from '../store/minimalWebsocketStore';
 import { cn } from '../lib/utils';
 
 interface StreamViewerProps {
@@ -97,32 +96,22 @@ const StreamOutput: React.FC<{ title: string; text: string; error: string | null
 const StreamViewer: React.FC<StreamViewerProps> = ({
   onMessageReceived,
 }) => {
-  const { isPaused } = usePauseStore();
-  const { text, error, isConnected, connect, disconnect } = useWebSocketStore();
 
-  // Connect/disconnect based on pause state
-  useEffect(() => {
-    if (!isPaused) {
-      connect();
-    } else {
-      disconnect();
-    }
-    return () => disconnect();
-  }, [isPaused, connect, disconnect]);
+  const { streamText, isConnected } = useWebSocket();
 
   // Handle message callback for any new content
   useEffect(() => {
-    if (onMessageReceived && text) {
-      onMessageReceived(text);
+    if (onMessageReceived && streamText.streamText) {
+      onMessageReceived(streamText.streamText);
     }
-  }, [text, onMessageReceived]);
+  }, [streamText.streamText, onMessageReceived]);
 
   return (
     <div className="w-full space-y-4 transition-all duration-200">
-      {error && (
+      {streamText.error && (
         <Alert variant="destructive" className="animate-in slide-in-from-top">
           <AlertDescription>
-            {error}
+            {streamText.error}
           </AlertDescription>
         </Alert>
       )}
@@ -130,8 +119,8 @@ const StreamViewer: React.FC<StreamViewerProps> = ({
       <div className="flex gap-4">
         <StreamOutput
           title="Stream"
-          text={text}
-          error={error}
+          text={streamText.streamText}
+          error={streamText.error}
           isConnected={isConnected}
         />
       </div>

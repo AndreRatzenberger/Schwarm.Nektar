@@ -1,32 +1,29 @@
-import React, { useEffect } from 'react'
+import React from 'react'
 import { Play, Pause } from 'lucide-react'
 import { usePauseStore } from '../store/pauseStore'
-import { useSettingsStore } from '../store/settingsStore'
-import { Button } from "@/components/ui/button"
-
+import { useWebSocket } from '../store/minimalWebsocketStore'
+import { Button } from './ui/button'
 
 export default function PlayPauseButton() {
-  const { isPaused, fetchPauseState, togglePause } = usePauseStore()
-  const { refreshInterval } = useSettingsStore()
+  const { isPaused, setIsPaused } = usePauseStore()
+  const { sendMessage } = useWebSocket()
 
-  useEffect(() => {
-    // Initial fetch
-    fetchPauseState()
-    if (!refreshInterval) return
-
-    // Set up interval for periodic fetching
-    const intervalId = setInterval(fetchPauseState, refreshInterval)
-
-    // Cleanup interval on unmount or when interval changes
-    return () => clearInterval(intervalId)
-  }, [refreshInterval, fetchPauseState])
+  const handleClick = () => {
+    // Toggle local pause state
+    setIsPaused(!isPaused)
+    // Send BREAK message through websocket
+    const message = JSON.stringify({
+      message_type: 'BREAK',
+      message: isPaused ? 'Resume requested' : 'Pause requested'
+    })
+    sendMessage(message)
+  }
 
   return (
     <Button
       className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-      onClick={togglePause}
+      onClick={handleClick}
     >
-
       {isPaused ? (
         <>
           <Play className="h-5 w-5 mr-2" />
@@ -38,7 +35,6 @@ export default function PlayPauseButton() {
           Pause
         </>
       )}
-  
     </Button>
   )
 }

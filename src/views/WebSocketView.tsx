@@ -1,14 +1,9 @@
 import React from 'react';
-import { useWebSocketStore } from '../store/websocketStore';
+import { useWebSocket } from '../store/minimalWebsocketStore';
 import { useSettingsStore } from '../store/settingsStore';
 
-interface WebSocketMessage {
-    message_type: string;
-    message: string;
-}
-
 const WebSocketView: React.FC = () => {
-    const { messages } = useWebSocketStore();
+    const { messages } = useWebSocket();
     const { endpointUrl } = useSettingsStore();
 
     const handleTestClick = async () => {
@@ -40,7 +35,7 @@ const WebSocketView: React.FC = () => {
                 </button>
             </div>
             <div className="bg-white shadow rounded-lg p-4 space-y-4 max-h-[600px] overflow-y-auto">
-                {messages.map((msg: WebSocketMessage, index: number) => (
+                {messages.map((msg, index) => (
                     <div key={index} className="border-l-4 border-indigo-500 pl-4 py-2">
                         <div className="text-sm font-medium text-gray-900">
                             Type: {msg.message_type}
