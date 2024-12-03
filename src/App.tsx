@@ -1,141 +1,18 @@
-import React, { useEffect,useCallback  } from 'react';
+import React from 'react';
 import { LayoutDashboard, ScrollText, Network, History, Settings } from 'lucide-react';
 import DashboardView from './views/DashboardView';
 import LogsView from './views/LogsView';
 import NetworkView from './views/NetworkView';
 import RunsView from './views/RunsView';
 import SettingsView from './views/SettingsView';
-
-import RefreshButton from './components/RefreshButton';
 import MessageFlow from './components/message-flow';
 import { ActiveRunBanner } from './components/ActiveRunBanner';
-import { useDataStore } from './store/dataStore';
-import { useLogStore } from './store/logStore';
-import { useRunStore } from './store/runStore';
-import { useSettingsStore } from './store/settingsStore';
-import type { Span, Log } from './types';
 import { cn } from './lib/utils';
 
 type View = 'dashboard' | 'messageflow' | 'logs' | 'network' | 'runs' | 'settings';
 
-const MAX_RETRIES = 3;
-const INITIAL_RETRY_DELAY = 1000;
-
-function transformSpansToLogs(spans: Span[]): Log[] {
-  return spans.map((span) => {
-    const isStart = span.name === 'SCHWARM_START';
-
-    const [agent, activity] = span.name.split('-').map(str => str.trim());
-    const isEventType = activity && activity.includes("EventType.");
-    
-    const isError = span.status_code == 'ERROR';
-    const timestamp = new Date(Number(span.start_time) / 1_000_000).toISOString();
-    
-    let level: Log['level'] = 'LOG';
-    if (isError) {
-      level = 'ERROR';
-    } else if (isEventType) {
-      const eventType = activity.replace("EventType.", "");
-      if (eventType === 'START_TURN' || eventType === 'INSTRUCT' || 
-          eventType === 'MESSAGE_COMPLETION' || eventType === 'POST_MESSAGE_COMPLETION' || 
-          eventType === 'TOOL_EXECUTION' || eventType === 'POST_TOOL_EXECUTION' || 
-          eventType === 'HANDOFF') {
-        level = eventType;
-      } else {
-        level = 'INFO';
-      }
-    }
-    
-    return {
-      id: span.id,
-      timestamp,
-      parent_id: span.parent_span_id,
-      run_id: span.attributes['run_id'] as string,
-      level,
-      agent: isStart ? 'System' : agent,
-      message: isStart ? 'Agent Framework Started' : `Agent ${span.name} activity`,
-      attributes: span.attributes
-    };
-  });
-}
-
 function App() {
   const [currentView, setCurrentView] = React.useState<View>('dashboard');
-  const { setData, setError } = useDataStore();
-  const { appendLogs, setLogs } = useLogStore();
-  const { findRunIdFromLogs, setActiveRunId } = useRunStore();
-  const { endpointUrl, refreshInterval, showRefreshButton, setIsLoading } = useSettingsStore();
-
-  const fetchWithRetry = useCallback(async (retryCount = 0, delay = INITIAL_RETRY_DELAY) => {
-    try {
-      const url = new URL(`${endpointUrl}/spans`);
-      const { latestId: currentLatestId } = useLogStore.getState();
-
-      if (currentLatestId) {
-        url.searchParams.append('after_id', currentLatestId);
-      }
-      
-      const response = await fetch(url, {
-        method: 'GET',
-        mode: 'cors',
-        headers: {
-          'Accept': 'application/json',
-        },
-        credentials: 'omit'
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const jsonData = await response.json();
-      const transformedLogs = transformSpansToLogs(jsonData);
-      
-      if (transformedLogs.length > 0) {
-        if (currentLatestId) {
-          appendLogs(transformedLogs);
-        } else {
-          setLogs(transformedLogs);
-        }
-        
-        // Update active run ID when new logs arrive
-        const runId = findRunIdFromLogs(transformedLogs);
-        if (runId) {
-          setActiveRunId(runId);
-        }
-      }
-      setError(null);
-      setIsLoading(false);
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch data';
-      
-      if (errorMessage.includes('CORS') || errorMessage.includes('Failed to fetch')) {
-        setError(
-          'CORS error: Unable to access the endpoint. Please ensure:\n' +
-          '1. The endpoint is running and accessible\n' +
-          '2. CORS is properly configured on the server\n' +
-          '3. The endpoint URL is correct'
-        );
-      } else if (retryCount < MAX_RETRIES) {
-        setTimeout(() => {
-          fetchWithRetry(retryCount + 1, delay * 2);
-        }, delay);
-        return;
-      } else {
-        setError(`${errorMessage}\nMax retries reached. Please check the endpoint configuration.`);
-      }
-      setIsLoading(false);
-    }
-  }, [endpointUrl, setData, setError, appendLogs, setLogs, findRunIdFromLogs, setActiveRunId, setIsLoading]);
-
-  useEffect(() => {
-    fetchWithRetry();
-
-    if (!refreshInterval) return;
-
-    const intervalId = setInterval(() => fetchWithRetry(), refreshInterval);
-    return () => clearInterval(intervalId);
-  }, [fetchWithRetry, refreshInterval]);
 
   const views = {
     dashboard: <DashboardView />,
@@ -188,11 +65,6 @@ function App() {
                 ))}
               </div>
             </div>
-            {showRefreshButton && (
-              <div className="flex items-center">
-                <RefreshButton onRefresh={fetchWithRetry} />
-              </div>
-            )}
           </div>
         </nav>
       </header>

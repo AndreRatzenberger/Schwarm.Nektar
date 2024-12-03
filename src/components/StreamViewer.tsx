@@ -1,202 +1,203 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Loader2, Radio } from 'lucide-react';
 import { Alert, AlertDescription } from './ui/alert';
 import { useSettingsStore } from '../store/settingsStore';
 import { usePauseStore } from '../store/pauseStore';
+import { useStreamStore } from '../store/streamStore';
 import { cn } from '../lib/utils';
 
-interface StreamReaderHook {
-  messages: string[];
-  error: string | null;
-  isLoading: boolean;
-  startStream: () => Promise<void>;
-  stopStream: () => void;
+interface StreamMessage {
+  type: 'default' | 'tool' | 'close';
+  content: string | null;
 }
 
 interface StreamViewerProps {
   onMessageReceived?: (message: string) => void;
 }
 
-const useStreamReader = (streamUrl: string): StreamReaderHook => {
-  const [messages, setMessages] = useState<string[]>([]);
+interface CodeProps {
+  inline?: boolean;
+  children?: React.ReactNode;
+}
+
+const useWebSocket = (url: string) => {
+  const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [abortController, setAbortController] = useState<AbortController | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const wsRef = useRef<WebSocket | null>(null);
+  const { isPaused } = usePauseStore();
+  const addMessage = useStreamStore(state => state.addMessage);
+  const currentMessageRef = useRef('');
 
-  const stopStream = useCallback(() => {
-    if (abortController) {
-      abortController.abort();
-      setAbortController(null);
-    }
-    setIsLoading(false);
-  }, [abortController]);
+  const connect = () => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
-  const startStream = useCallback(async () => {
-    stopStream();
-    const newController = new AbortController();
-    setAbortController(newController);
-    setIsLoading(true);
-    setError(null);
+    const ws = new WebSocket(url);
+    wsRef.current = ws;
 
-    try {
-      const response = await fetch(streamUrl, {
-        signal: newController.signal,
-        mode: 'cors',
-        credentials: 'omit'
-      });
+    ws.onopen = () => {
+      setIsConnected(true);
+      setError(null);
+      currentMessageRef.current = '';
+    };
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+    ws.onmessage = (event) => {
+      try {
+        const message: StreamMessage = JSON.parse(event.data);
 
-      if (!response.body) {
-        throw new Error('ReadableStream not supported');
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-
-      while (true) {
-        const { value, done } = await reader.read();
-
-        if (done) {
-          break;
+        if (message.type === 'close') {
+          // When we receive a close signal, the current message is complete
+          if (currentMessageRef.current) {
+            addMessage(currentMessageRef.current);
+            currentMessageRef.current = '';
+          }
+          ws.close();
+          return;
         }
 
-        const chunk = decoder.decode(value, { stream: true });
-        setMessages(prev => [...prev, chunk]);
+        if (message.content) {
+          setText(prev => prev + message.content);
+          currentMessageRef.current += message.content;
+        }
+      } catch (e) {
+        console.error('Error parsing message:', e);
       }
-    } catch (err: unknown) {
-      if (err instanceof Error && err.name === 'AbortError') {
-        return;
-      }
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-      setError(errorMessage);
-      console.error('Stream error:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [streamUrl, stopStream]);
-
-  // Cleanup effect
-  useEffect(() => {
-    return () => {
-      stopStream();
-      setMessages([]);
-      setError(null);
-      setIsLoading(false);
     };
-  }, [stopStream]);
 
-  return { messages, error, isLoading, startStream, stopStream };
+    ws.onerror = (event) => {
+      setError('WebSocket error occurred');
+      console.error('WebSocket error:', event);
+    };
+
+    ws.onclose = () => {
+      setIsConnected(false);
+      if (!isPaused) {
+        // Attempt to reconnect after a delay if not paused
+        setTimeout(connect, 2000);
+      }
+    };
+  };
+
+  const disconnect = () => {
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    if (!isPaused) {
+      connect();
+    } else {
+      disconnect();
+    }
+    return () => disconnect();
+  }, [url, isPaused]);
+
+  return { text, error, isConnected };
 };
+
+const StreamOutput: React.FC<{ title: string; stream: ReturnType<typeof useWebSocket> }> = ({ title, stream }) => (
+  <div className={cn(
+    "rounded-lg border border-gray-200 bg-white shadow-sm",
+    "dark:bg-gray-900 dark:border-gray-800",
+    "transition-all duration-200 flex-1"
+  )}>
+    <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
+      <div className="flex items-center space-x-2">
+        <h3 className="font-semibold">{title}</h3>
+        {stream.isConnected && (
+          <div className="flex items-center space-x-2 text-sm text-green-600 dark:text-green-400">
+            <Radio className="w-3 h-3 animate-pulse" />
+            <span>Live</span>
+          </div>
+        )}
+      </div>
+    </div>
+
+    <div className="p-4 min-h-[200px] relative">
+      <div className="prose prose-sm max-w-none dark:prose-invert">
+        {stream.text && (
+          <ReactMarkdown
+            className="break-words"
+            components={{
+              h1: ({ ...props }) => <h1 className="text-2xl font-bold mt-4 mb-2" {...props} />,
+              h2: ({ ...props }) => <h2 className="text-xl font-bold mt-3 mb-2" {...props} />,
+              h3: ({ ...props }) => <h3 className="text-lg font-bold mt-2 mb-1" {...props} />,
+              p: ({ ...props }) => <p className="mb-2" {...props} />,
+              ul: ({ ...props }) => <ul className="list-disc pl-4 mb-2" {...props} />,
+              ol: ({ ...props }) => <ol className="list-decimal pl-4 mb-2" {...props} />,
+              li: ({ ...props }) => <li className="mb-1" {...props} />,
+              code: ({ inline, children, ...props }: CodeProps) =>
+                inline ? (
+                  <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-sm" {...props}>
+                    {children}
+                  </code>
+                ) : (
+                  <code className="block bg-gray-100 dark:bg-gray-800 p-2 rounded text-sm overflow-x-auto" {...props}>
+                    {children}
+                  </code>
+                ),
+              pre: ({ ...props }) => (
+                <pre className="bg-gray-100 dark:bg-gray-800 p-3 rounded-lg overflow-x-auto mb-4" {...props} />
+              ),
+              blockquote: ({ ...props }) => (
+                <blockquote className="border-l-4 border-gray-200 dark:border-gray-700 pl-4 italic mb-4" {...props} />
+              ),
+            }}
+          >
+            {stream.text}
+          </ReactMarkdown>
+        )}
+      </div>
+
+      {!stream.isConnected && !stream.text && !stream.error && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="flex flex-col items-center space-y-2">
+            <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
+            <span className="text-sm text-gray-500">Connecting...</span>
+          </div>
+        </div>
+      )}
+
+      {!stream.isConnected && !stream.text && stream.error && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="text-red-500 italic text-center">
+            {stream.error}
+          </div>
+        </div>
+      )}
+    </div>
+  </div>
+);
 
 const StreamViewer: React.FC<StreamViewerProps> = ({
   onMessageReceived,
 }) => {
   const { endpointUrl } = useSettingsStore();
-  const { isPaused } = usePauseStore();
-  const streamUrl = `${endpointUrl}/stream`;
-  
-  const { messages, error, isLoading, startStream, stopStream } = useStreamReader(streamUrl);
 
-  // Handle streaming based on pause state
-  useEffect(() => {
-    if (!isPaused) {
-      startStream();
-    } else {
-      stopStream();
-    }
-  }, [isPaused, startStream, stopStream]);
+  const defaultStream = useWebSocket(`ws://${endpointUrl.replace(/^https?:\/\//, '')}/ws`);
 
-  // Handle message callback
+  // Handle message callback for any new content
   useEffect(() => {
-    if (messages.length > 0 && onMessageReceived) {
-      onMessageReceived(messages[messages.length - 1]);
+    if (onMessageReceived && defaultStream.text) {
+      onMessageReceived(defaultStream.text);
     }
-  }, [messages, onMessageReceived]);
+  }, [defaultStream.text, onMessageReceived]);
 
   return (
     <div className="w-full space-y-4 transition-all duration-200">
-      {error && (
+      {defaultStream.error && (
         <Alert variant="destructive" className="animate-in slide-in-from-top">
           <AlertDescription>
-            {error}
+            {defaultStream.error}
           </AlertDescription>
         </Alert>
       )}
 
-      <div className={cn(
-        "rounded-lg border border-gray-200 bg-white shadow-sm",
-        "dark:bg-gray-900 dark:border-gray-800",
-        "transition-all duration-200"
-      )}>
-        <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <h3 className="font-semibold">Stream Output</h3>
-            {isLoading && (
-              <div className="flex items-center space-x-2 text-sm text-green-600 dark:text-green-400">
-                <Radio className="w-3 h-3 animate-pulse" />
-                <span>Live</span>
-              </div>
-            )}
-          </div>
-          <div className="text-sm text-gray-500">
-            {messages.length} messages
-          </div>
-        </div>
-
-        <div className="p-4 min-h-[200px] relative">
-          <div className="prose prose-sm max-w-none dark:prose-invert">
-            {messages.map((msg, idx) => (
-              <ReactMarkdown
-                key={idx}
-                className="break-words animate-in fade-in-50"
-                components={{
-                  h1: ({ ...props }) => <h1 className="text-2xl font-bold mt-4 mb-2" {...props} />,
-                  h2: ({ ...props }) => <h2 className="text-xl font-bold mt-3 mb-2" {...props} />,
-                  h3: ({ ...props }) => <h3 className="text-lg font-bold mt-2 mb-1" {...props} />,
-                  p: ({ ...props }) => <p className="mb-2" {...props} />,
-                  ul: ({ ...props }) => <ul className="list-disc pl-4 mb-2" {...props} />,
-                  ol: ({ ...props }) => <ol className="list-decimal pl-4 mb-2" {...props} />,
-                  li: ({ ...props }) => <li className="mb-1" {...props} />,
-                  code: ({ node, ...props }) =>
-                    node ? (
-                      <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-sm" {...props} />
-                    ) : (
-                      <code className="block bg-gray-100 dark:bg-gray-800 p-2 rounded text-sm overflow-x-auto" {...props} />
-                    ),
-                  pre: ({ ...props }) => (
-                    <pre className="bg-gray-100 dark:bg-gray-800 p-3 rounded-lg overflow-x-auto mb-4" {...props} />
-                  ),
-                  blockquote: ({ ...props }) => (
-                    <blockquote className="border-l-4 border-gray-200 dark:border-gray-700 pl-4 italic mb-4" {...props} />
-                  ),
-                }}
-              >
-                {msg}
-              </ReactMarkdown>
-            ))}
-          </div>
-
-          {isLoading && messages.length === 0 && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="flex flex-col items-center space-y-2">
-                <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
-                <span className="text-sm text-gray-500">Waiting for messages...</span>
-              </div>
-            </div>
-          )}
-
-          {!isLoading && messages.length === 0 && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-gray-500 italic text-center">
-                {isPaused ? 'Stream paused' : 'No messages yet'}
-              </div>
-            </div>
-          )}
-        </div>
+      <div className="flex gap-4">
+        <StreamOutput title="Stream" stream={defaultStream} />
       </div>
     </div>
   );
