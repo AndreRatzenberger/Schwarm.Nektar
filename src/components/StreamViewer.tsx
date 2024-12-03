@@ -1,16 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Loader2, Radio } from 'lucide-react';
 import { Alert, AlertDescription } from './ui/alert';
-import { useSettingsStore } from '../store/settingsStore';
 import { usePauseStore } from '../store/pauseStore';
-import { useStreamStore } from '../store/streamStore';
+import { useWebSocketStore } from '../store/websocketStore';
 import { cn } from '../lib/utils';
-
-interface StreamMessage {
-  type: 'default' | 'tool' | 'close';
-  content: string | null;
-}
 
 interface StreamViewerProps {
   onMessageReceived?: (message: string) => void;
@@ -21,84 +15,12 @@ interface CodeProps {
   children?: React.ReactNode;
 }
 
-const useWebSocket = (url: string) => {
-  const [text, setText] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const wsRef = useRef<WebSocket | null>(null);
-  const { isPaused } = usePauseStore();
-  const addMessage = useStreamStore(state => state.addMessage);
-  const currentMessageRef = useRef('');
-
-  const connect = () => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
-
-    const ws = new WebSocket(url);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      setIsConnected(true);
-      setError(null);
-      currentMessageRef.current = '';
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const message: StreamMessage = JSON.parse(event.data);
-
-        if (message.type === 'close') {
-          // When we receive a close signal, the current message is complete
-          if (currentMessageRef.current) {
-            addMessage(currentMessageRef.current);
-            currentMessageRef.current = '';
-          }
-          ws.close();
-          return;
-        }
-
-        if (message.content) {
-          setText(prev => prev + message.content);
-          currentMessageRef.current += message.content;
-        }
-      } catch (e) {
-        console.error('Error parsing message:', e);
-      }
-    };
-
-    ws.onerror = (event) => {
-      setError('WebSocket error occurred');
-      console.error('WebSocket error:', event);
-    };
-
-    ws.onclose = () => {
-      setIsConnected(false);
-      if (!isPaused) {
-        // Attempt to reconnect after a delay if not paused
-        setTimeout(connect, 2000);
-      }
-    };
-  };
-
-  const disconnect = () => {
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-  };
-
-  useEffect(() => {
-    if (!isPaused) {
-      connect();
-    } else {
-      disconnect();
-    }
-    return () => disconnect();
-  }, [url, isPaused]);
-
-  return { text, error, isConnected };
-};
-
-const StreamOutput: React.FC<{ title: string; stream: ReturnType<typeof useWebSocket> }> = ({ title, stream }) => (
+const StreamOutput: React.FC<{ title: string; text: string; error: string | null; isConnected: boolean }> = ({
+  title,
+  text,
+  error,
+  isConnected
+}) => (
   <div className={cn(
     "rounded-lg border border-gray-200 bg-white shadow-sm",
     "dark:bg-gray-900 dark:border-gray-800",
@@ -107,7 +29,7 @@ const StreamOutput: React.FC<{ title: string; stream: ReturnType<typeof useWebSo
     <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
       <div className="flex items-center space-x-2">
         <h3 className="font-semibold">{title}</h3>
-        {stream.isConnected && (
+        {isConnected && (
           <div className="flex items-center space-x-2 text-sm text-green-600 dark:text-green-400">
             <Radio className="w-3 h-3 animate-pulse" />
             <span>Live</span>
@@ -118,7 +40,7 @@ const StreamOutput: React.FC<{ title: string; stream: ReturnType<typeof useWebSo
 
     <div className="p-4 min-h-[200px] relative">
       <div className="prose prose-sm max-w-none dark:prose-invert">
-        {stream.text && (
+        {text && (
           <ReactMarkdown
             className="break-words"
             components={{
@@ -147,12 +69,12 @@ const StreamOutput: React.FC<{ title: string; stream: ReturnType<typeof useWebSo
               ),
             }}
           >
-            {stream.text}
+            {text}
           </ReactMarkdown>
         )}
       </div>
 
-      {!stream.isConnected && !stream.text && !stream.error && (
+      {!isConnected && !text && !error && (
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="flex flex-col items-center space-y-2">
             <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
@@ -161,10 +83,10 @@ const StreamOutput: React.FC<{ title: string; stream: ReturnType<typeof useWebSo
         </div>
       )}
 
-      {!stream.isConnected && !stream.text && stream.error && (
+      {!isConnected && !text && error && (
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="text-red-500 italic text-center">
-            {stream.error}
+            {error}
           </div>
         </div>
       )}
@@ -175,29 +97,43 @@ const StreamOutput: React.FC<{ title: string; stream: ReturnType<typeof useWebSo
 const StreamViewer: React.FC<StreamViewerProps> = ({
   onMessageReceived,
 }) => {
-  const { endpointUrl } = useSettingsStore();
+  const { isPaused } = usePauseStore();
+  const { text, error, isConnected, connect, disconnect } = useWebSocketStore();
 
-  const defaultStream = useWebSocket(`ws://${endpointUrl.replace(/^https?:\/\//, '')}/ws/stream`);
+  // Connect/disconnect based on pause state
+  useEffect(() => {
+    if (!isPaused) {
+      connect();
+    } else {
+      disconnect();
+    }
+    return () => disconnect();
+  }, [isPaused, connect, disconnect]);
 
   // Handle message callback for any new content
   useEffect(() => {
-    if (onMessageReceived && defaultStream.text) {
-      onMessageReceived(defaultStream.text);
+    if (onMessageReceived && text) {
+      onMessageReceived(text);
     }
-  }, [defaultStream.text, onMessageReceived]);
+  }, [text, onMessageReceived]);
 
   return (
     <div className="w-full space-y-4 transition-all duration-200">
-      {defaultStream.error && (
+      {error && (
         <Alert variant="destructive" className="animate-in slide-in-from-top">
           <AlertDescription>
-            {defaultStream.error}
+            {error}
           </AlertDescription>
         </Alert>
       )}
 
       <div className="flex gap-4">
-        <StreamOutput title="Stream" stream={defaultStream} />
+        <StreamOutput
+          title="Stream"
+          text={text}
+          error={error}
+          isConnected={isConnected}
+        />
       </div>
     </div>
   );
