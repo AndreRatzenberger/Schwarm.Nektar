@@ -14,7 +14,7 @@ export default function PlayPauseButton() {
     // Send BREAK message through websocket
     const message = JSON.stringify({
       message_type: 'BREAK',
-      message: isPaused ? 'Resume requested' : 'Pause requested'
+      message: isPaused ? 'false' : 'true'
     })
     sendMessage(message)
   }
