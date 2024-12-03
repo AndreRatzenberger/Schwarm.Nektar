@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { LayoutDashboard, ScrollText, Network, History, Settings, MessageSquare } from 'lucide-react';
 import DashboardView from './views/DashboardView';
 import LogsView from './views/LogsView';
@@ -8,12 +8,80 @@ import SettingsView from './views/SettingsView';
 import WebSocketChat from './views/WebSocketView';
 import MessageFlow from './components/message-flow';
 import { ActiveRunBanner } from './components/ActiveRunBanner';
+import { useSettingsStore } from './store/settingsStore';
+import { useLogStore } from './store/logStore';
+import { useRunStore } from './store/runStore';
 import { cn } from './lib/utils';
+import type { Span } from './types';
+
+function transformSpansToLogs(spans: Span[]) {
+  return spans.map((span) => {
+    const isStart = span.name === 'SCHWARM_START';
+
+    const [agent, activity] = span.name.split('-').map(str => str.trim());
+    const isEventType = activity && activity.includes("EventType.");
+
+    const isError = span.status_code == 'ERROR';
+    const timestamp = new Date(Number(span.start_time) / 1_000_000).toISOString();
+
+    let level: 'LOG' | 'ERROR' | 'INFO' | 'START_TURN' | 'INSTRUCT' | 'MESSAGE_COMPLETION' | 'POST_MESSAGE_COMPLETION' | 'TOOL_EXECUTION' | 'POST_TOOL_EXECUTION' | 'HANDOFF' = 'LOG';
+    if (isError) {
+      level = 'ERROR';
+    } else if (isEventType) {
+      const eventType = activity.replace("EventType.", "");
+      if (eventType === 'START_TURN' || eventType === 'INSTRUCT' ||
+        eventType === 'MESSAGE_COMPLETION' || eventType === 'POST_MESSAGE_COMPLETION' ||
+        eventType === 'TOOL_EXECUTION' || eventType === 'POST_TOOL_EXECUTION' ||
+        eventType === 'HANDOFF') {
+        level = eventType;
+      } else {
+        level = 'INFO';
+      }
+    }
+
+    return {
+      id: span.id,
+      timestamp,
+      parent_id: span.parent_span_id,
+      run_id: span.attributes['run_id'] as string,
+      level,
+      agent: isStart ? 'System' : agent,
+      message: isStart ? 'Agent Framework Started' : `Agent ${span.name} activity`,
+      attributes: span.attributes
+    };
+  });
+}
 
 type View = 'dashboard' | 'messageflow' | 'logs' | 'network' | 'runs' | 'settings' | 'websocket';
 
 function App() {
   const [currentView, setCurrentView] = React.useState<View>('dashboard');
+  const { endpointUrl } = useSettingsStore();
+  const { setLogs } = useLogStore();
+  const { findRunIdFromLogs, setActiveRunId } = useRunStore();
+
+  // Fetch all spans when component mounts
+  useEffect(() => {
+    const fetchSpans = async () => {
+      try {
+        const response = await fetch(`${endpointUrl}/spans`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch spans');
+        }
+        const spans = await response.json() as Span[];
+        const logs = transformSpansToLogs(spans);
+        setLogs(logs);
+
+        // Find and set the active run ID from the logs
+        const runId = findRunIdFromLogs(logs);
+        setActiveRunId(runId);
+      } catch (error) {
+        console.error('Error fetching spans:', error);
+      }
+    };
+
+    fetchSpans();
+  }, [endpointUrl, setLogs, findRunIdFromLogs, setActiveRunId]);
 
   const views = {
     dashboard: <DashboardView />,

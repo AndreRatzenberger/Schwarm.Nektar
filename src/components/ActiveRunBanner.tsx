@@ -4,10 +4,12 @@ import { useLogStore } from '../store/logStore';
 import { usePauseStore } from '../store/pauseStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useBreakpointStore } from '../store/breakpointStore';
+import { useWebSocket } from '../store/minimalWebsocketStore';
 import PlayPauseButton from './PlayPauseButton';
 import { Badge } from './ui/badge';
 import { Input } from './ui/input';
-import { Loader2 } from 'lucide-react';
+import { Button } from './ui/button';
+import { Loader2, AlertCircle } from 'lucide-react';
 
 const BREAKPOINT_LABELS = {
   on_start_turn: 'START_TURN',
@@ -25,6 +27,7 @@ export function ActiveRunBanner() {
   const isPaused = usePauseStore(state => state.isPaused);
   const isLoading = useSettingsStore(state => state.isLoading);
   const { breakpoints, turnAmount, toggleBreakpoint, setTurnAmount } = useBreakpointStore();
+  const { isConnected, connect } = useWebSocket();
 
   const handleTurnAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
@@ -44,6 +47,19 @@ export function ActiveRunBanner() {
             <div className="flex items-center">
               <Loader2 className="h-5 w-5 animate-spin mr-2" />
               <p className="text-sm text-gray-600">Connecting to agent framework...</p>
+            </div>
+          ) : !isConnected ? (
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center text-red-600">
+                <AlertCircle className="h-5 w-5 mr-2" />
+                <span className="text-sm">Disconnected from WebSocket</span>
+              </div>
+              <Button
+                onClick={connect}
+                className="bg-red-100 hover:bg-red-200 text-red-600"
+              >
+                Reconnect
+              </Button>
             </div>
           ) : (
             <>
@@ -80,7 +96,7 @@ export function ActiveRunBanner() {
           )}
         </div>
 
-        {!isLoading && (
+        {!isLoading && isConnected && (
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2 overflow-x-auto">
               <span className="text-sm text-gray-600 whitespace-nowrap">Breakpoints:</span>

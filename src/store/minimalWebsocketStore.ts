@@ -4,7 +4,6 @@ import { usePauseStore } from "./pauseStore";
 import { useLogStore } from "./logStore";
 import { WebSocketMessage, Span } from "src/types";
 
-
 interface StreamText {
     streamText: string;
     messages: WebSocketMessage[];
@@ -55,12 +54,18 @@ let listeners: Array<(message: WebSocketMessage) => void> = [];
 /**
  * Connects to the WebSocket server
  * @param url - WebSocket server URL
+ * @param setIsConnected - Function to update connection status
  */
-const connectWebSocket = (url: string) => {
+const connectWebSocket = (url: string, setIsConnected: (connected: boolean) => void) => {
+    if (socket?.readyState === WebSocket.OPEN) {
+        return;
+    }
+
     socket = new WebSocket(url);
 
     socket.onopen = () => {
         console.log("WebSocket connection established.");
+        setIsConnected(true);
     };
 
     socket.onmessage = (event: MessageEvent) => {
@@ -133,10 +138,12 @@ const connectWebSocket = (url: string) => {
 
     socket.onclose = () => {
         console.log("WebSocket connection closed.");
+        setIsConnected(false);
     };
 
     socket.onerror = (error) => {
         console.error("WebSocket error:", error);
+        setIsConnected(false);
     };
 };
 
@@ -150,7 +157,7 @@ const initialStreamText: StreamText = {
 
 /**
  * Hook to use WebSocket in a React component
- * @returns {messages, sendMessage}
+ * @returns {messages, sendMessage, connect, isConnected}
  */
 export const useWebSocket = () => {
     const [messages, setMessages] = useState<WebSocketMessage[]>([]);
@@ -163,8 +170,7 @@ export const useWebSocket = () => {
 
     useEffect(() => {
         if (!socket) {
-            connectWebSocket(wsEndpointUrl);
-            setIsConnected(true);
+            connectWebSocket(wsEndpointUrl, setIsConnected);
         }
 
         const messageHandler = (message: WebSocketMessage) => {
@@ -180,6 +186,10 @@ export const useWebSocket = () => {
         };
     }, [wsEndpointUrl]);
 
+    const connect = () => {
+        connectWebSocket(wsEndpointUrl, setIsConnected);
+    };
+
     const sendMessage = (message: string) => {
         if (socket && socket.readyState === WebSocket.OPEN) {
             socket.send(message);
@@ -188,5 +198,5 @@ export const useWebSocket = () => {
         }
     };
 
-    return { messages, isConnected, sendMessage, streamText: streamTextState };
+    return { messages, isConnected, sendMessage, connect, streamText: streamTextState };
 };
