@@ -31,25 +31,25 @@ function transformSpansToLogs(spans: Span[]): Log[] {
 
     const [agent, activity] = span.name.split('-').map(str => str.trim());
     const isEventType = activity && activity.includes("EventType.");
-    
+
     const isError = span.status_code == 'ERROR';
     const timestamp = new Date(Number(span.start_time) / 1_000_000).toISOString();
-    
+
     let level: Log['level'] = 'LOG';
     if (isError) {
       level = 'ERROR';
     } else if (isEventType) {
       const eventType = activity.replace("EventType.", "");
-      if (eventType === 'START_TURN' || eventType === 'INSTRUCT' || 
-          eventType === 'MESSAGE_COMPLETION' || eventType === 'POST_MESSAGE_COMPLETION' || 
-          eventType === 'TOOL_EXECUTION' || eventType === 'POST_TOOL_EXECUTION' || 
-          eventType === 'HANDOFF') {
+      if (eventType === 'START_TURN' || eventType === 'INSTRUCT' ||
+        eventType === 'MESSAGE_COMPLETION' || eventType === 'POST_MESSAGE_COMPLETION' ||
+        eventType === 'TOOL_EXECUTION' || eventType === 'POST_TOOL_EXECUTION' ||
+        eventType === 'HANDOFF') {
         level = eventType;
       } else {
         level = 'INFO';
       }
     }
-    
+
     return {
       id: span.id,
       timestamp,
@@ -92,55 +92,43 @@ export function ActiveRunBanner() {
 
   const fetchWithRetry = React.useCallback(async (retryCount = 0, delay = INITIAL_RETRY_DELAY) => {
     try {
-      const url = new URL(`${endpointUrl}/spans`);
-      const { latestId: currentLatestId } = useLogStore.getState();
+      // Test WebSocket connections instead of /spans endpoint
+      const wsUrl = new URL(endpointUrl);
+      wsUrl.protocol = wsUrl.protocol.replace('http', 'ws');
 
-      if (currentLatestId) {
-        url.searchParams.append('after_id', currentLatestId);
-      }
-      
-      const response = await fetch(url, {
-        method: 'GET',
-        mode: 'cors',
-        headers: {
-          'Accept': 'application/json',
-        },
-        credentials: 'omit'
-      });
+      // Try connecting to both WebSocket endpoints
+      const ws = new WebSocket(`${wsUrl}ws`);
+      const wsStream = new WebSocket(`${wsUrl}ws/stream`);
 
-      if (!response.ok) {
-        throw new Error(`Server returned ${response.status} ${response.statusText}`);
-      }
-      
-      const jsonData = await response.json();
+      await Promise.race([
+        new Promise((_, reject) => {
+          ws.onerror = () => reject(new Error('Failed to connect to /ws'));
+          wsStream.onerror = () => reject(new Error('Failed to connect to /ws/stream'));
+        }),
+        new Promise(resolve => {
+          let connected = 0;
+          const checkBothConnected = () => {
+            connected++;
+            if (connected === 2) resolve(true);
+          };
+          ws.onopen = checkBothConnected;
+          wsStream.onopen = checkBothConnected;
+        })
+      ]);
+
+      // Clean up test connections
+      ws.close();
+      wsStream.close();
+
       setIsConnected(true);
       setLastSuccessfulFetch(new Date());
-      
-      // Store raw spans in dataStore
-      setData(jsonData);
-      
-      // Transform spans to logs
-      const logs = transformSpansToLogs(jsonData);
-      
-      if (logs.length > 0) {
-        if (currentLatestId) {
-          appendLogs(logs);
-        } else {
-          setLogs(logs);
-        }
-        
-        const runId = findRunIdFromLogs(logs);
-        if (runId) {
-          setActiveRunId(runId);
-        }
-      }
       setError(null);
       setIsLoading(false);
     } catch (err) {
-      console.error('Fetch error:', err);
+      console.error('Connection error:', err);
       setIsConnected(false);
-      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch data';
-      
+      const errorMessage = err instanceof Error ? err.message : 'Failed to connect';
+
       if (retryCount < MAX_RETRIES) {
         setTimeout(() => {
           fetchWithRetry(retryCount + 1, delay * 2);
@@ -149,14 +137,12 @@ export function ActiveRunBanner() {
       }
 
       let errorDetails = '';
-      if (errorMessage.includes('Failed to fetch')) {
-        errorDetails = `Unable to connect to ${endpointUrl}. Please ensure the server is running.`;
-      } else if (errorMessage.includes('CORS')) {
-        errorDetails = `CORS error: The server at ${endpointUrl} is not allowing connections from this origin.`;
+      if (errorMessage.includes('Failed to connect')) {
+        errorDetails = `Unable to connect to WebSocket endpoints at ${endpointUrl}. Please ensure the server is running.`;
       } else {
         errorDetails = `${errorMessage}. Please check your network connection and server status.`;
       }
-      
+
       setError(errorDetails);
       setIsLoading(false);
     }
@@ -181,7 +167,7 @@ export function ActiveRunBanner() {
         fetchTurnAmount();
       }
     }, refreshInterval);
-    
+
     return () => clearInterval(intervalId);
   }, [fetchWithRetry, refreshInterval, isLoading, isPaused]);
 
@@ -203,8 +189,8 @@ export function ActiveRunBanner() {
             <div className="flex items-center text-red-600">
               <AlertCircle className="h-5 w-5 mr-2" />
               <p className="text-sm">{error || `Unable to connect to ${endpointUrl}`}</p>
-              <button 
-                onClick={() => fetchWithRetry()} 
+              <button
+                onClick={() => fetchWithRetry()}
                 className="ml-4 px-2 py-1 text-sm bg-red-100 hover:bg-red-200 rounded-md transition-colors"
               >
                 Retry Connection
@@ -214,7 +200,7 @@ export function ActiveRunBanner() {
             <>
               <div className="flex items-center space-x-4">
                 <PlayPauseButton />
-                
+
                 {showRefreshButton && (
                   <RefreshButton onRefresh={fetchWithRetry} />
                 )}

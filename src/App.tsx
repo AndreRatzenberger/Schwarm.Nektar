@@ -1,15 +1,16 @@
 import React from 'react';
-import { LayoutDashboard, ScrollText, Network, History, Settings } from 'lucide-react';
+import { LayoutDashboard, ScrollText, Network, History, Settings, MessageSquare } from 'lucide-react';
 import DashboardView from './views/DashboardView';
 import LogsView from './views/LogsView';
 import NetworkView from './views/NetworkView';
 import RunsView from './views/RunsView';
 import SettingsView from './views/SettingsView';
+import WebSocketView from './views/WebSocketView';
 import MessageFlow from './components/message-flow';
 import { ActiveRunBanner } from './components/ActiveRunBanner';
 import { cn } from './lib/utils';
 
-type View = 'dashboard' | 'messageflow' | 'logs' | 'network' | 'runs' | 'settings';
+type View = 'dashboard' | 'messageflow' | 'logs' | 'network' | 'runs' | 'settings' | 'websocket';
 
 function App() {
   const [currentView, setCurrentView] = React.useState<View>('dashboard');
@@ -20,7 +21,8 @@ function App() {
     network: <NetworkView />,
     runs: <RunsView />,
     messageflow: <MessageFlow />,
-    settings: <SettingsView />
+    settings: <SettingsView />,
+    websocket: <WebSocketView />
   };
 
   const navItems = [
@@ -28,7 +30,8 @@ function App() {
     { id: 'logs', label: 'Logs', icon: ScrollText },
     { id: 'network', label: 'Network', icon: Network },
     { id: 'runs', label: 'Runs', icon: History },
-    { id: 'messageflow', label: 'Message Flow', icon: ScrollText},
+    { id: 'messageflow', label: 'Message Flow', icon: ScrollText },
+    { id: 'websocket', label: 'WebSocket Messages', icon: MessageSquare },
     { id: 'settings', label: 'Settings', icon: Settings }
   ];
 

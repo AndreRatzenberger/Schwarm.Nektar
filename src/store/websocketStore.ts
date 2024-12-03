@@ -3,11 +3,17 @@ import { useSettingsStore } from './settingsStore';
 import { useStreamStore } from './streamStore';
 import { usePauseStore } from './pauseStore';
 
+interface WebSocketMessage {
+    message_type: string;
+    message: string;
+}
+
 interface WebSocketState {
     text: string;
     error: string | null;
     isConnected: boolean;
     isWaitingForInput: boolean;
+    messages: WebSocketMessage[];
     connect: () => void;
     disconnect: () => void;
 }
@@ -21,14 +27,16 @@ export const useWebSocketStore = create<WebSocketState>((set) => {
         if (statusWsRef?.readyState === WebSocket.OPEN) return;
 
         const endpointUrl = useSettingsStore.getState().endpointUrl;
-        const ws = new WebSocket(`ws://${endpointUrl.replace(/^https?:\/\//, '')}/ws/chat-status`);
+        const ws = new WebSocket(`ws://${endpointUrl.replace(/^https?:\/\//, '')}/ws`);
         statusWsRef = ws;
 
         ws.onmessage = (event) => {
             try {
-                console.log('Chat status:', event.data);
-                const isWaiting = JSON.parse(event.data);
-                set({ isWaitingForInput: isWaiting });
+                const data = JSON.parse(event.data);
+                set(state => ({
+                    isWaitingForInput: data.message_type === "IS_WAITING",
+                    messages: [...state.messages, data]
+                }));
             } catch (e) {
                 console.error('Error parsing chat status:', e);
             }
@@ -114,6 +122,7 @@ export const useWebSocketStore = create<WebSocketState>((set) => {
         error: null,
         isConnected: false,
         isWaitingForInput: false,
+        messages: [],
         connect,
         disconnect,
     };
